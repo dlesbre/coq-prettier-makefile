@@ -158,9 +158,12 @@ let rec main state =
   try
     let line = read_line () in
     main (do_line state (parse_line line))
-  with End_of_file -> resolve_error state
+  with End_of_file | Sys.Break ->
+    clear_current state;
+    resolve_error state
 
 let _ =
+  Sys.catch_break true;
   let state = { building = []; seen = LS_Set.empty; error = None } in
   print_current state;
   main state
