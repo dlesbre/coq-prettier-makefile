@@ -1,4 +1,4 @@
 (executable
  (public_name coqprettiermakefile)
  (name main)
- (libraries ANSITerminal))
+ (libraries ANSITerminal str))
