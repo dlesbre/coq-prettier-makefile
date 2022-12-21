@@ -10,6 +10,7 @@ type state = {
   building : (file * int) list;
   error : (Location.t * string list) option;
   seen : LS_Set.t;
+  printed : bool;
 }
 
 type line =
@@ -48,18 +49,25 @@ let parse_line line =
   Unknown line
 
 let print_current state =
-  let l = List.length state.building in
-  ANSITerminal.printf [ ANSITerminal.Bold ] "Compiling %d files:\n" l;
-  List.iter
-    (fun (s, _) ->
-      ANSITerminal.printf [ ANSITerminal.Bold ] " - ";
-      ANSITerminal.printf [ ANSITerminal.blue ] "%s\n" s)
-    state.building
+  if not state.printed then (
+    let l = List.length state.building in
+    ANSITerminal.printf [ ANSITerminal.Bold ] "Compiling %d files:\n" l;
+    List.iter
+      (fun (s, _) ->
+        ANSITerminal.printf [ ANSITerminal.Bold ] " - ";
+        ANSITerminal.printf [ ANSITerminal.blue ] "%s\n" s)
+      state.building;
+    ANSITerminal.printf [] "";
+    { state with printed = true })
+  else state
 
 let clear_current state =
-  ANSITerminal.move_bol ();
-  ANSITerminal.move_cursor 0 (-List.length state.building - 1);
-  ANSITerminal.erase ANSITerminal.Below
+  if state.printed then (
+    ANSITerminal.move_bol ();
+    ANSITerminal.move_cursor 0 (-List.length state.building - 1);
+    ANSITerminal.erase ANSITerminal.Below;
+    { state with printed = false })
+  else state
 
 let pretty_time t =
   if t < 60.0 then Format.sprintf "%.1f s" t
@@ -90,7 +98,7 @@ let resolve_error state =
           Location.pretty_filename ~extension:".v" (Location.get_file loc)
         in
         let msg = List.fold_left (fun acc m -> acc ^ m ^ "\n") "" msg in
-        if String.starts_with ~prefix:"Error:" msg then (
+        if String.starts_with ~prefix:"Error" msg then (
           ANSITerminal.printf [] "%s: " file;
           ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.red ] "ERROR\n";
           ANSITerminal.printf [ ANSITerminal.Bold ] "%s\n"
@@ -149,21 +157,21 @@ let print_line state = function
       { state with error = Some (l, s) }
 
 let do_line state line =
-  clear_current state;
+  let state = clear_current state in
   let state = print_line state line in
-  print_current state;
-  state
+  print_current state
 
 let rec main state =
   try
     let line = read_line () in
     main (do_line state (parse_line line))
   with End_of_file | Sys.Break ->
-    clear_current state;
+    let state = clear_current state in
     resolve_error state
 
 let _ =
   Sys.catch_break true;
-  let state = { building = []; seen = LS_Set.empty; error = None } in
-  print_current state;
+  let state =
+    { building = []; seen = LS_Set.empty; error = None; printed = false }
+  in
   main state
