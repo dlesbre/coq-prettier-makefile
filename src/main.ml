@@ -25,6 +25,7 @@ type line =
   | Make of string
   | Error of Location.t * string list
   | COQDEP
+  | CLEAN
   | Unknown of string
 
 let ( let* ) x f = match x with Some t -> t | None -> f ()
@@ -32,6 +33,7 @@ let ( let* ) x f = match x with Some t -> t | None -> f ()
 let parse_line line =
   let* () = Option.map (fun x -> Error (x, [])) (Location.string2loc line) in
   let* () = if line = "COQDEP VFILES" then Some COQDEP else None in
+  let* () = if line = "CLEAN" then Some CLEAN else None in
   let* () =
     if String.starts_with ~prefix:"make" line then Some (Make line) else None
   in
@@ -57,7 +59,7 @@ let print_current state =
         ANSITerminal.printf [ ANSITerminal.Bold ] " - ";
         ANSITerminal.printf [ ANSITerminal.blue ] "%s\n" s)
       state.building;
-    ANSITerminal.printf [] "";
+    flush stdout;
     { state with printed = true })
   else state
 
@@ -133,10 +135,16 @@ let print_line state = function
         [ ANSITerminal.Bold; ANSITerminal.green ]
         "Finding dependencies with COQDEP\n";
       state
-  | Make m ->
+  | CLEAN ->
       let state = resolve_error state in
-      ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.yellow ] "make";
-      ANSITerminal.printf [] "%s\n" (String.sub m 4 (String.length m - 4));
+      ANSITerminal.printf
+        [ ANSITerminal.Bold; ANSITerminal.green ]
+        "Cleaning build files\n";
+      state
+  | Make _m ->
+      let state = resolve_error state in
+      (* ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.yellow ] "make";
+         ANSITerminal.printf [] "%s\n" (String.sub m 4 (String.length m - 4)); *)
       state
   | Done d ->
       let state = resolve_error state in
@@ -147,8 +155,11 @@ let print_line state = function
         (pretty_size d.mem);
       { state with building = List.remove_assoc file state.building }
   | Unknown u -> (
+      Format.printf "!!Adding to error %s@." u;
       match state.error with
-      | Some (l, s) -> { state with error = Some (l, u :: s) }
+      | Some (l, s) ->
+          Format.printf "!!Adding to error@.";
+          { state with error = Some (l, u :: s) }
       | None ->
           ANSITerminal.printf [] "%s\n" u;
           state)
@@ -156,22 +167,24 @@ let print_line state = function
       let state = resolve_error state in
       { state with error = Some (l, s) }
 
-let do_line state line =
-  let state = clear_current state in
-  let state = print_line state line in
-  print_current state
-
-let rec main state =
+let rec main ic state =
   try
-    let line = read_line () in
-    main (do_line state (parse_line line))
-  with End_of_file | Sys.Break ->
+    let line = input_line ic in
+    let line = parse_line line in
+    let state = clear_current state in
+    let state = print_line state line in
+    let state = print_current state in
+    main ic state
+  with End_of_file ->
     let state = clear_current state in
     resolve_error state
 
 let _ =
   Sys.catch_break true;
+  let argv = Array.to_list (Array.sub Sys.argv 1 (Array.length Sys.argv - 1)) in
+  let in_c = Unix.open_process_in (Filename.quote_command "make" argv) in
   let state =
     { building = []; seen = LS_Set.empty; error = None; printed = false }
   in
-  main state
+  let _ = main in_c state in
+  Unix.close_process_in in_c
