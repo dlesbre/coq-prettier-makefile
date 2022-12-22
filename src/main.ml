@@ -83,53 +83,6 @@ let clear_current state =
     { state with printed = false })
   else state
 
-let pretty_time t =
-  let t' = abs (int_of_float t) in
-  let hours = t' / 3600 in
-  let t' = t' mod 3600 in
-  let minutes = (t' / 60) - (60 * hours) in
-  Format.sprintf "%02d:%02d:%02d" hours minutes (t' mod 60)
-
-let time_breaks =
-  [
-    (1., ANSITerminal.green);
-    (10., ANSITerminal.cyan);
-    (60., ANSITerminal.blue);
-    (150., ANSITerminal.yellow);
-    (300., ANSITerminal.magenta);
-  ]
-
-let print_time time =
-  let rec aux = function
-    | [] -> ANSITerminal.red
-    | (s, c) :: q -> if time <= s then c else aux q
-  in
-  ANSITerminal.printf [ aux time_breaks ] "%s" (pretty_time time)
-
-let pretty_size value =
-  let base = 1000. in
-  let rec aux value suffix =
-    if value < base then Format.sprintf "%3.1f " value ^ List.hd suffix
-    else aux (value /. 1000.) (List.tl suffix)
-  in
-  aux (float_of_int value) [ "ko"; "Mo"; "Go"; "To"; "Po"; "Eo"; "Zo" ]
-
-let size_breaks =
-  [
-    (10_000, ANSITerminal.green);
-    (100_000, ANSITerminal.cyan);
-    (300_000, ANSITerminal.blue);
-    (500_000, ANSITerminal.yellow);
-    (1_000_000, ANSITerminal.magenta);
-  ]
-
-let print_size size =
-  let rec aux = function
-    | [] -> ANSITerminal.red
-    | (s, c) :: q -> if size <= s then c else aux q
-  in
-  ANSITerminal.printf [ aux size_breaks ] "%s" (pretty_size size)
-
 let contains s1 s2 =
   let re = Str.regexp_case_fold s2 in
   try
@@ -195,12 +148,14 @@ let print_line state = function
       let state = resolve_error state in
       let file = Location.pretty_filename ~extension:".vo" d.file in
       let status = List.assoc file state.building in
-      print_time d.real;
+      Utils.print_time d.real;
       ANSITerminal.printf [] " | ";
-      print_size d.mem;
+      Utils.print_size d.mem;
       ANSITerminal.printf [] " | ";
       print_status status;
-      ANSITerminal.printf [] " | %s\n" file;
+      ANSITerminal.printf [] " | ";
+      Utils.print_file file;
+      ANSITerminal.printf [] "\n";
       { state with building = List.remove_assoc file state.building }
   | Unknown u -> (
       match state.error with
