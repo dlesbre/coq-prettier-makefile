@@ -1,4 +1,16 @@
 type file = string
+type status = S_Ok | S_Error | S_Warning
+
+let print_status = function
+  | S_Ok -> ANSITerminal.printf [ ANSITerminal.green ] "OK     "
+  | S_Error -> ANSITerminal.printf [ ANSITerminal.red ] "ERROR  "
+  | S_Warning -> ANSITerminal.printf [ ANSITerminal.magenta ] "WARNING"
+
+let max_status l r =
+  match (l, r) with
+  | S_Error, _ | _, S_Error -> S_Error
+  | S_Warning, _ | _, S_Warning -> S_Warning
+  | S_Ok, S_Ok -> S_Ok
 
 module LS_Set = Set.Make (struct
   type t = Location.t * string list
@@ -7,7 +19,7 @@ module LS_Set = Set.Make (struct
 end)
 
 type state = {
-  building : (file * int) list;
+  building : (file * status) list;
   error : (Location.t * string list) option;
   seen : LS_Set.t;
   printed : bool;
@@ -72,26 +84,64 @@ let clear_current state =
   else state
 
 let pretty_time t =
-  if t < 60.0 then Format.sprintf "%.1f s" t
-  else if t < 3600. then
-    let minutes = t /. 60. in
-    Format.sprintf "%0f m %1f s" minutes (t -. (60. *. minutes))
-  else
-    let hours = t /. 3600. in
-    let minutes = (t /. 60.) -. (60. *. hours) in
-    Format.sprintf "%.0f h %.0f m %.1f s" hours minutes
-      (t -. (60. *. minutes) -. (3600. *. hours))
+  let t' = abs (int_of_float t) in
+  let hours = t' / 3600 in
+  let t' = t' mod 3600 in
+  let minutes = (t' / 60) - (60 * hours) in
+  Format.sprintf "%02d:%02d:%02d" hours minutes (t' mod 60)
+
+let time_breaks =
+  [
+    (1., ANSITerminal.green);
+    (10., ANSITerminal.cyan);
+    (60., ANSITerminal.blue);
+    (150., ANSITerminal.yellow);
+    (300., ANSITerminal.magenta);
+  ]
+
+let print_time time =
+  let rec aux = function
+    | [] -> ANSITerminal.red
+    | (s, c) :: q -> if time <= s then c else aux q
+  in
+  ANSITerminal.printf [ aux time_breaks ] "%s" (pretty_time time)
 
 let pretty_size value =
   let base = 1000. in
   let rec aux value suffix =
-    if value < base then Format.sprintf "%.2f " value ^ List.hd suffix
+    if value < base then Format.sprintf "%3.1f " value ^ List.hd suffix
     else aux (value /. 1000.) (List.tl suffix)
   in
   aux (float_of_int value) [ "ko"; "Mo"; "Go"; "To"; "Po"; "Eo"; "Zo" ]
 
+let size_breaks =
+  [
+    (10_000, ANSITerminal.green);
+    (100_000, ANSITerminal.cyan);
+    (300_000, ANSITerminal.blue);
+    (500_000, ANSITerminal.yellow);
+    (1_000_000, ANSITerminal.magenta);
+  ]
+
+let print_size size =
+  let rec aux = function
+    | [] -> ANSITerminal.red
+    | (s, c) :: q -> if size <= s then c else aux q
+  in
+  ANSITerminal.printf [ aux size_breaks ] "%s" (pretty_size size)
+
+let contains s1 s2 =
+  let re = Str.regexp_case_fold s2 in
+  try
+    ignore (Str.search_forward re s1 0);
+    true
+  with Not_found -> false
+
+let is_error msg = contains msg "Error" || contains msg "Command exited"
+
 let resolve_error state =
   match state.error with
+  | None -> state
   | Some (loc, msg) ->
       if LS_Set.mem (loc, msg) state.seen then state
       else
@@ -99,35 +149,30 @@ let resolve_error state =
         let file =
           Location.pretty_filename ~extension:".v" (Location.get_file loc)
         in
-        let msg = List.fold_left (fun acc m -> acc ^ m ^ "\n") "" msg in
-        if String.starts_with ~prefix:"Error" msg then (
-          ANSITerminal.printf [] "%s: " file;
-          ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.red ] "ERROR\n";
-          ANSITerminal.printf [ ANSITerminal.Bold ] "%s\n"
-            (Location.loc2string loc);
-          Location.show_loc loc [ ANSITerminal.red ];
-          ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.red ] "Error";
-          ANSITerminal.printf [] "%s" (String.sub msg 5 (String.length msg - 5));
-          { state with building = List.remove_assoc file state.building })
-        else (
-          ANSITerminal.printf [ ANSITerminal.Bold ] "%s\n"
-            (Location.loc2string loc);
-          Location.show_loc loc [ ANSITerminal.magenta ];
-          if String.starts_with ~prefix:"Warning" msg then (
-            ANSITerminal.printf
-              [ ANSITerminal.Bold; ANSITerminal.magenta ]
-              "Warning";
-            ANSITerminal.printf [] "%s"
-              (String.sub msg 7 (String.length msg - 7)))
-          else ANSITerminal.printf [] "%s" msg;
-          { state with building = List.remove_assoc file state.building })
-  | None -> state
+        let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
+        let color, text, status =
+          if is_error msg then (ANSITerminal.red, "Error", S_Error)
+          else (ANSITerminal.magenta, "Warning", S_Warning)
+        in
+        ANSITerminal.printf [ ANSITerminal.Bold ] "%s\n"
+          (Location.loc2string loc);
+        Location.show_loc loc [ color ];
+        ANSITerminal.printf [ ANSITerminal.Bold; color ] "%s" text;
+        ANSITerminal.printf [] ":\n | %s\n"
+          (Str.global_replace (Str.regexp "\n") "\n | " (String.trim msg));
+        let old_status = List.assoc file state.building in
+        {
+          state with
+          building =
+            (file, max_status old_status status)
+            :: List.remove_assoc file state.building;
+        }
 
 let print_line state = function
   | COQC file ->
       let state = resolve_error state in
       let file = Location.pretty_filename ~extension:".v" file in
-      let state = { state with building = state.building @ [ (file, 0) ] } in
+      let state = { state with building = state.building @ [ (file, S_Ok) ] } in
       state
   | COQDEP ->
       let state = resolve_error state in
@@ -149,17 +194,17 @@ let print_line state = function
   | Done d ->
       let state = resolve_error state in
       let file = Location.pretty_filename ~extension:".vo" d.file in
-      ANSITerminal.printf [] "%s: " file;
-      ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.green ] "DONE";
-      ANSITerminal.printf [] " in %s %s\n" (pretty_time d.real)
-        (pretty_size d.mem);
+      let status = List.assoc file state.building in
+      print_time d.real;
+      ANSITerminal.printf [] " | ";
+      print_size d.mem;
+      ANSITerminal.printf [] " | ";
+      print_status status;
+      ANSITerminal.printf [] " | %s\n" file;
       { state with building = List.remove_assoc file state.building }
   | Unknown u -> (
-      Format.printf "!!Adding to error %s@." u;
       match state.error with
-      | Some (l, s) ->
-          Format.printf "!!Adding to error@.";
-          { state with error = Some (l, u :: s) }
+      | Some (l, s) -> { state with error = Some (l, u :: s) }
       | None ->
           ANSITerminal.printf [] "%s\n" u;
           state)
@@ -167,24 +212,34 @@ let print_line state = function
       let state = resolve_error state in
       { state with error = Some (l, s) }
 
+let str_end = "coq-prettier-makefile-done"
+
 let rec main ic state =
   try
     let line = input_line ic in
-    let line = parse_line line in
-    let state = clear_current state in
-    let state = print_line state line in
-    let state = print_current state in
-    main ic state
-  with End_of_file ->
-    let state = clear_current state in
-    resolve_error state
+    if line = str_end then
+      let state = clear_current state in
+      resolve_error state
+    else
+      let line = parse_line line in
+      let state = clear_current state in
+      let state = print_line state line in
+      let state = print_current state in
+      main ic state
+  with
+  | End_of_file -> main ic state
+  | Sys.Break -> state
 
 let _ =
   Sys.catch_break true;
   let argv = Array.to_list (Array.sub Sys.argv 1 (Array.length Sys.argv - 1)) in
-  let in_c = Unix.open_process_in (Filename.quote_command "make" argv) in
+  let in_c, out_c, err_c =
+    Unix.open_process_full
+      (Filename.quote_command "make" argv ^ "; echo " ^ str_end)
+      (Unix.environment ())
+  in
   let state =
     { building = []; seen = LS_Set.empty; error = None; printed = false }
   in
   let _ = main in_c state in
-  Unix.close_process_in in_c
+  Unix.close_process_full (in_c, out_c, err_c)
