@@ -24,7 +24,7 @@ let print_time time =
 let pretty_size value =
   let base = 1000. in
   let rec aux value suffix =
-    if value < base then Format.sprintf "%3.1f " value ^ List.hd suffix
+    if value < base then Format.sprintf "%5.1f " value ^ List.hd suffix
     else aux (value /. 1000.) (List.tl suffix)
   in
   aux (float_of_int value) [ "ko"; "Mo"; "Go"; "To"; "Po"; "Eo"; "Zo" ]
