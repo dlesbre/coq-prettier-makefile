@@ -183,7 +183,11 @@ let rec main ic state =
       main ic state
   with
   | End_of_file -> main ic state
-  | Sys.Break -> state
+  | Sys.Break ->
+      let state = clear_current state in
+      let state = resolve_error state in
+      ANSITerminal.printf [ ANSITerminal.yellow ] "INTERRUPTED\n";
+      state
 
 let _ =
   Sys.catch_break true;
