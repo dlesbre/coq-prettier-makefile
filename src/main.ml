@@ -112,7 +112,7 @@ let resolve_error state =
   match state.error with
   | None -> state
   | Some (loc, msg) ->
-      if LS_Set.mem (loc, msg) state.seen then state
+      if LS_Set.mem (loc, msg) state.seen then { state with error = None }
       else
         let state = { state with seen = LS_Set.add (loc, msg) state.seen } in
         let file =
@@ -132,6 +132,7 @@ let resolve_error state =
         let old_status = List.assoc_opt file state.building in
         {
           state with
+          error = None;
           building =
             (file, max_status old_status status)
             :: List.remove_assoc file state.building;
@@ -168,7 +169,7 @@ let print_line state = function
       state
   | PRETTY_TABLE line ->
       let state = resolve_error state in
-      ANSITerminal.printf [] "%s\n" line;
+      ANSITerminal.printf [] "\n%s\n" line;
       state
   | Done d ->
       let state = resolve_error state in
