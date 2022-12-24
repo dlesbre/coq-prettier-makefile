@@ -31,10 +31,10 @@ let pretty_size value =
 
 let size_breaks =
   [
-    (10_000, ANSITerminal.green);
-    (100_000, ANSITerminal.cyan);
-    (300_000, ANSITerminal.blue);
-    (500_000, ANSITerminal.yellow);
+    (100_000, ANSITerminal.green);
+    (250_000, ANSITerminal.cyan);
+    (500_000, ANSITerminal.blue);
+    (750_000, ANSITerminal.yellow);
     (1_000_000, ANSITerminal.magenta);
   ]
 
