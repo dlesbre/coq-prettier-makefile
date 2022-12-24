@@ -7,10 +7,13 @@ let print_status = function
   | S_Warning -> ANSITerminal.printf [ ANSITerminal.magenta ] "WARNING"
 
 let max_status l r =
-  match (l, r) with
-  | S_Error, _ | _, S_Error -> S_Error
-  | S_Warning, _ | _, S_Warning -> S_Warning
-  | S_Ok, S_Ok -> S_Ok
+  match l with
+  | None -> r
+  | Some l -> (
+      match (l, r) with
+      | S_Error, _ | _, S_Error -> S_Error
+      | S_Warning, _ | _, S_Warning -> S_Warning
+      | S_Ok, S_Ok -> S_Ok)
 
 module LS_Set = Set.Make (struct
   type t = Location.t * string list
@@ -38,16 +41,29 @@ type line =
   | Error of Location.t * string list
   | COQDEP
   | CLEAN
+  | COQ_MAKEFILE of string
+  | PRETTY_TABLE of string
   | Unknown of string
 
-let ( let* ) x f = match x with Some t -> t | None -> f ()
-
 let parse_line line =
+  (* stop if return some t, else continue *)
+  let ( let* ) x f = match x with Some t -> t | None -> f () in
+  let if_ b c = if b then Some c else None in
   let* () = Option.map (fun x -> Error (x, [])) (Location.string2loc line) in
-  let* () = if line = "COQDEP VFILES" then Some COQDEP else None in
-  let* () = if line = "CLEAN" then Some CLEAN else None in
+  let* () = if_ (line = "COQDEP VFILES") COQDEP in
+  let* () = if_ (line = "CLEAN") CLEAN in
   let* () =
-    if String.starts_with ~prefix:"make" line then Some (Make line) else None
+    if_
+      (String.starts_with ~prefix:"coq_makefile" (String.trim line))
+      (COQ_MAKEFILE line)
+  in
+  let* () =
+    if_
+      (String.starts_with ~prefix:"Time |" (String.trim line))
+      (PRETTY_TABLE line)
+  in
+  let* () =
+    if_ (String.starts_with ~prefix:"make" (String.trim line)) (Make line)
   in
   let* () =
     try Scanf.sscanf line "COQC %s" (fun s -> Some (COQC s))
@@ -113,7 +129,7 @@ let resolve_error state =
         ANSITerminal.printf [ ANSITerminal.Bold; color ] "%s" text;
         ANSITerminal.printf [] ":\n | %s\n"
           (Str.global_replace (Str.regexp "\n") "\n | " (String.trim msg));
-        let old_status = List.assoc file state.building in
+        let old_status = List.assoc_opt file state.building in
         {
           state with
           building =
@@ -144,10 +160,21 @@ let print_line state = function
       (* ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.yellow ] "make";
          ANSITerminal.printf [] "%s\n" (String.sub m 4 (String.length m - 4)); *)
       state
+  | COQ_MAKEFILE _line ->
+      let state = resolve_error state in
+      ANSITerminal.printf
+        [ ANSITerminal.Bold; ANSITerminal.green ]
+        "Creating makefile with coq_makefile\n";
+      state
+  | PRETTY_TABLE line ->
+      let state = resolve_error state in
+      ANSITerminal.printf [] "%s\n" line;
+      state
   | Done d ->
       let state = resolve_error state in
       let file = Location.pretty_filename ~extension:".vo" d.file in
-      let status = List.assoc file state.building in
+      let status = List.assoc_opt file state.building in
+      let status = Option.value status ~default:S_Ok in
       Utils.print_time d.real;
       ANSITerminal.printf [] " | ";
       Utils.print_size d.mem;
@@ -182,7 +209,9 @@ let rec main ic state =
       let state = print_current state in
       main ic state
   with
-  | End_of_file -> main ic state
+  | End_of_file ->
+      Unix.sleepf 0.5;
+      main ic state
   | Sys.Break ->
       let state = clear_current state in
       let state = resolve_error state in
