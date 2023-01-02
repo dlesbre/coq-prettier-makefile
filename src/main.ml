@@ -81,21 +81,35 @@ let parse_line line =
 let print_current state =
   if not state.printed then (
     let l = List.length state.building in
-    ANSITerminal.printf [ ANSITerminal.Bold ] "Compiling %d files:\n" l;
-    List.iter
-      (fun (s, _) ->
-        ANSITerminal.printf [ ANSITerminal.Bold ] " - ";
-        ANSITerminal.printf [ ANSITerminal.blue ] "%s\n" s)
-      state.building;
+    (match l with
+    | 0 -> ()
+    | 1 ->
+        ANSITerminal.printf [ ANSITerminal.Bold ] "Compiling ";
+        ANSITerminal.printf [ ANSITerminal.blue ] "%s\n"
+          (fst (List.hd state.building))
+    | _ ->
+        ANSITerminal.printf [ ANSITerminal.Bold ] "Compiling %d files:\n" l;
+        List.iter
+          (fun (s, _) ->
+            ANSITerminal.printf [ ANSITerminal.Bold ] " - ";
+            ANSITerminal.printf [ ANSITerminal.blue ] "%s\n" s)
+          state.building);
     flush stdout;
     { state with printed = true })
   else state
 
 let clear_current state =
   if state.printed then (
-    ANSITerminal.move_bol ();
-    ANSITerminal.move_cursor 0 (-List.length state.building - 1);
-    ANSITerminal.erase ANSITerminal.Below;
+    (match List.length state.building with
+    | 0 -> ()
+    | 1 ->
+        ANSITerminal.move_bol ();
+        ANSITerminal.move_cursor 0 (-1);
+        ANSITerminal.erase ANSITerminal.Below
+    | _ ->
+        ANSITerminal.move_bol ();
+        ANSITerminal.move_cursor 0 (-List.length state.building - 1);
+        ANSITerminal.erase ANSITerminal.Below);
     { state with printed = false })
   else state
 
