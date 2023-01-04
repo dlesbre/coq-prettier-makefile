@@ -56,3 +56,38 @@ let print_file file =
     | [] -> ()
   in
   aux path
+
+let rec strip_prefix str = function
+  | [] -> str
+  | prefix :: ps ->
+      if String.starts_with ~prefix str then
+        Str.string_after str (String.length prefix)
+      else strip_prefix str ps
+
+let print_error str format =
+  let str = String.trim str in
+  let str =
+    strip_prefix str
+      [
+        "ERROR:";
+        "Error:";
+        "error:";
+        "E:";
+        "ERROR";
+        "Error";
+        "error";
+        "WARNING:";
+        "Warning:";
+        "warning:";
+        "W:";
+        "WARNING";
+        "Warning";
+        "warning";
+      ]
+  in
+  let str = String.trim str in
+  List.iter
+    (fun line ->
+      ANSITerminal.printf format "  | ";
+      ANSITerminal.printf [] "%s\n" line)
+    (String.split_on_char '\n' str)

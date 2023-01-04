@@ -123,6 +123,7 @@ let contains s1 s2 =
 let is_error msg = contains msg "Error" || contains msg "Command exited"
 
 let resolve_error state =
+  let open ANSITerminal in
   match state.error with
   | None -> state
   | Some (loc, msg) ->
@@ -134,15 +135,15 @@ let resolve_error state =
         in
         let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
         let color, text, status =
-          if is_error msg then (ANSITerminal.red, "Error", S_Error)
-          else (ANSITerminal.magenta, "Warning", S_Warning)
+          if is_error msg then (red, "Error", S_Error)
+          else (magenta, "Warning", S_Warning)
         in
-        ANSITerminal.printf [ ANSITerminal.Bold ] "%s\n"
-          (Location.loc2string loc);
+        printf [ Bold ] "%s\n" (Location.loc2string loc);
         Location.show_loc loc [ color ];
-        ANSITerminal.printf [ ANSITerminal.Bold; color ] "%s" text;
-        ANSITerminal.printf [] ":\n | %s\n"
-          (Str.global_replace (Str.regexp "\n") "\n | " (String.trim msg));
+        printf [ Bold; color ] "%s" text;
+        printf [] ":\n";
+        Utils.print_error msg [ color ];
+        printf [] "\n";
         let old_status = List.assoc_opt file state.building in
         {
           state with
