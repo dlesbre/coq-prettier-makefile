@@ -20,7 +20,7 @@
  (synopsis
   "A small program to prettify and colorize the output of coq makefile")
  (description "")
- (depends ocaml dune ANSITerminal str)
+ (depends ocaml dune ANSITerminal)
  (tags
   (coq makefile coq-makefile cli)))
 
