@@ -1,3 +1,18 @@
+type status = S_Ok | S_Error | S_Warning | S_Compiling
+
+let print_status = function
+  | S_Ok -> ANSITerminal.printf [ ANSITerminal.green ] "DONE     "
+  | S_Error -> ANSITerminal.printf [ ANSITerminal.red ] "ERROR    "
+  | S_Warning -> ANSITerminal.printf [ ANSITerminal.magenta ] "WARNING  "
+  | S_Compiling -> ANSITerminal.printf [] "COMPILING"
+
+let max_status l r =
+  match (l, r) with
+  | S_Error, _ | _, S_Error -> S_Error
+  | S_Warning, _ | _, S_Warning -> S_Warning
+  | S_Ok, _ | _, S_Ok -> S_Ok
+  | S_Compiling, S_Compiling -> S_Compiling
+
 let pretty_time t =
   let t' = abs (int_of_float t) in
   let hours = t' / 3600 in
@@ -39,11 +54,14 @@ let size_breaks =
   ]
 
 let print_size size =
-  let rec aux = function
-    | [] -> ANSITerminal.red
-    | (s, c) :: q -> if size <= s then c else aux q
-  in
-  ANSITerminal.printf [ aux size_breaks ] "%s" (pretty_size size)
+  match size with
+  | None -> ANSITerminal.printf [] "  ....  "
+  | Some size ->
+      let rec aux = function
+        | [] -> ANSITerminal.red
+        | (s, c) :: q -> if size <= s then c else aux q
+      in
+      ANSITerminal.printf [ aux size_breaks ] "%s" (pretty_size size)
 
 let print_file file =
   let path = String.split_on_char '/' file in
@@ -91,3 +109,17 @@ let print_error str format =
       ANSITerminal.printf format "  | ";
       ANSITerminal.printf [] "%s\n" line)
     (String.split_on_char '\n' str)
+
+let print_file_line filename status time mem =
+  print_time time;
+  ANSITerminal.printf [] " | ";
+  print_size mem;
+  ANSITerminal.printf [] " | ";
+  print_status status;
+  ANSITerminal.printf [] " | ";
+  print_file filename;
+  ANSITerminal.printf [] "\n"
+
+let print_separator () =
+  ANSITerminal.printf [ ANSITerminal.Bold ]
+    "---------|----------|-----------|-----------------------------------------------\n"

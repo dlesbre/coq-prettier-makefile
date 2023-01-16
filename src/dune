@@ -1,4 +1,4 @@
 (executable
  (public_name coq-make)
  (name main)
- (libraries ANSITerminal str))
+ (libraries ANSITerminal str threads))

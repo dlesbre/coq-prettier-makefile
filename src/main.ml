@@ -1,28 +1,13 @@
-type file = string
-type status = S_Ok | S_Error | S_Warning
-
-let print_status = function
-  | S_Ok -> ANSITerminal.printf [ ANSITerminal.green ] "OK     "
-  | S_Error -> ANSITerminal.printf [ ANSITerminal.red ] "ERROR  "
-  | S_Warning -> ANSITerminal.printf [ ANSITerminal.magenta ] "WARNING"
-
-let max_status l r =
-  match l with
-  | None -> r
-  | Some l -> (
-      match (l, r) with
-      | S_Error, _ | _, S_Error -> S_Error
-      | S_Warning, _ | _, S_Warning -> S_Warning
-      | S_Ok, S_Ok -> S_Ok)
-
 module LS_Set = Set.Make (struct
   type t = Location.t * string list
 
   let compare = compare
 end)
 
+type compiling = { file : string; status : Utils.status; start_time : float }
+
 type state = {
-  building : (file * status) list;
+  building : compiling list;
   error : (Location.t * string list) option;
   seen : LS_Set.t;
   printed : bool;
@@ -83,16 +68,11 @@ let print_current state =
     let l = List.length state.building in
     (match l with
     | 0 -> ()
-    | 1 ->
-        ANSITerminal.printf [ ANSITerminal.Bold ] "Compiling ";
-        ANSITerminal.printf [ ANSITerminal.blue ] "%s\n"
-          (fst (List.hd state.building))
     | _ ->
-        ANSITerminal.printf [ ANSITerminal.Bold ] "Compiling %d files:\n" l;
+        Utils.print_separator ();
         List.iter
-          (fun (s, _) ->
-            ANSITerminal.printf [ ANSITerminal.Bold ] " - ";
-            ANSITerminal.printf [ ANSITerminal.blue ] "%s\n" s)
+          (fun { file; status; start_time } ->
+            Utils.print_file_line file status (Unix.time () -. start_time) None)
           state.building);
     flush stdout;
     { state with printed = true })
@@ -102,10 +82,6 @@ let clear_current state =
   if state.printed then (
     (match List.length state.building with
     | 0 -> ()
-    | 1 ->
-        ANSITerminal.move_bol ();
-        ANSITerminal.move_cursor 0 (-1);
-        ANSITerminal.erase ANSITerminal.Below
     | _ ->
         ANSITerminal.move_bol ();
         ANSITerminal.move_cursor 0 (-List.length state.building - 1);
@@ -122,6 +98,21 @@ let contains s1 s2 =
 
 let is_error msg = contains msg "Error" || contains msg "Command exited"
 
+let rec list_rm_assoc file = function
+  | [] -> (None, [])
+  | t :: q ->
+      if t.file = file then (Some t, q)
+      else
+        let elem, list = list_rm_assoc file q in
+        (elem, t :: list)
+
+let rec update_status file status = function
+  | [] -> [ { file; status; start_time = Unix.time () } ]
+  | t :: q ->
+      if t.file = file then
+        { t with status = Utils.max_status status t.status } :: q
+      else t :: update_status file status q
+
 let resolve_error state =
   let open ANSITerminal in
   match state.error with
@@ -135,8 +126,8 @@ let resolve_error state =
         in
         let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
         let color, text, status =
-          if is_error msg then (red, "Error", S_Error)
-          else (magenta, "Warning", S_Warning)
+          if is_error msg then (red, "Error", Utils.S_Error)
+          else (magenta, "Warning", Utils.S_Warning)
         in
         printf [ Bold ] "%s\n" (Location.loc2string loc);
         Location.show_loc loc [ color ];
@@ -144,20 +135,22 @@ let resolve_error state =
         printf [] ":\n";
         Utils.print_error msg [ color ];
         printf [] "\n";
-        let old_status = List.assoc_opt file state.building in
         {
           state with
           error = None;
-          building =
-            (file, max_status old_status status)
-            :: List.remove_assoc file state.building;
+          building = update_status file status state.building;
         }
 
 let print_line state = function
   | COQC file ->
       let state = resolve_error state in
       let file = Location.pretty_filename ~extension:".v" file in
-      let state = { state with building = state.building @ [ (file, S_Ok) ] } in
+      let state =
+        {
+          state with
+          building = update_status file Utils.S_Compiling state.building;
+        }
+      in
       state
   | COQDEP ->
       let state = resolve_error state in
@@ -189,17 +182,14 @@ let print_line state = function
   | Done d ->
       let state = resolve_error state in
       let file = Location.pretty_filename ~extension:".vo" d.file in
-      let status = List.assoc_opt file state.building in
-      let status = Option.value status ~default:S_Ok in
-      Utils.print_time d.real;
-      ANSITerminal.printf [] " | ";
-      Utils.print_size d.mem;
-      ANSITerminal.printf [] " | ";
-      print_status status;
-      ANSITerminal.printf [] " | ";
-      Utils.print_file file;
-      ANSITerminal.printf [] "\n";
-      { state with building = List.remove_assoc file state.building }
+      let status, building = list_rm_assoc file state.building in
+      let status =
+        match status with
+        | None -> Utils.S_Ok
+        | Some s -> Utils.max_status Utils.S_Ok s.status
+      in
+      Utils.print_file_line file status d.real (Some d.mem);
+      { state with building }
   | Unknown u -> (
       match state.error with
       | Some (l, s) -> { state with error = Some (l, u :: s) }
@@ -211,23 +201,45 @@ let print_line state = function
       { state with error = Some (l, s) }
 
 let str_end = "coq-prettier-makefile-done"
+let update_time = 1.
+let todo = Queue.create ()
+let is_done = ref false
 
-let rec main ic state =
+let rec fetch_input ic =
   try
     let line = input_line ic in
-    if line = str_end then
+    if line = str_end then is_done := true
+    else (
+      Queue.add line todo;
+      fetch_input ic)
+  with
+  | End_of_file ->
+      Unix.sleepf update_time;
+      fetch_input ic
+  | Sys.Break -> Thread.exit ()
+
+let rec main state =
+  try
+    if Queue.is_empty todo then (
       let state = clear_current state in
-      resolve_error state
+      if !is_done then
+        let state = resolve_error state in
+        state
+      else
+        let state = print_current state in
+        Unix.sleepf update_time;
+        main state)
     else
+      let line = Queue.take todo in
       let line = parse_line line in
       let state = clear_current state in
       let state = print_line state line in
       let state = print_current state in
-      main ic state
+      main state
   with
   | End_of_file ->
-      Unix.sleepf 0.5;
-      main ic state
+      Unix.sleepf update_time;
+      main state
   | Sys.Break ->
       let state = clear_current state in
       let state = resolve_error state in
@@ -245,5 +257,6 @@ let _ =
   let state =
     { building = []; seen = LS_Set.empty; error = None; printed = false }
   in
-  let _ = main in_c state in
+  let _ = Thread.create fetch_input in_c in
+  let _ = main state in
   Unix.close_process_full (in_c, out_c, err_c)
