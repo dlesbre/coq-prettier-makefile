@@ -218,32 +218,35 @@ let rec fetch_input ic =
       fetch_input ic
   | Sys.Break -> Thread.exit ()
 
-let rec main state =
+let rec main state start =
   try
     if Queue.is_empty todo then (
       let state = clear_current state in
-      if !is_done then
+      if !is_done then (
         let state = resolve_error state in
-        state
+        ANSITerminal.printf [ ANSITerminal.Bold ] "Process ended in %s\n"
+          (Utils.pretty_time (Unix.time () -. start));
+        state)
       else
         let state = print_current state in
         Unix.sleepf update_time;
-        main state)
+        main state start)
     else
       let line = Queue.take todo in
       let line = parse_line line in
       let state = clear_current state in
       let state = print_line state line in
       let state = print_current state in
-      main state
+      main state start
   with
   | End_of_file ->
       Unix.sleepf update_time;
-      main state
+      main state start
   | Sys.Break ->
       let state = clear_current state in
       let state = resolve_error state in
-      ANSITerminal.printf [ ANSITerminal.yellow ] "INTERRUPTED\n";
+      ANSITerminal.printf [ ANSITerminal.Bold ] "INTERRUPTED in %s\n"
+        (Utils.pretty_time (Unix.time () -. start));
       state
 
 let _ =
@@ -258,5 +261,5 @@ let _ =
     { building = []; seen = LS_Set.empty; error = None; printed = false }
   in
   let _ = Thread.create fetch_input in_c in
-  let _ = main state in
+  let _ = main state (Unix.time ()) in
   Unix.close_process_full (in_c, out_c, err_c)
