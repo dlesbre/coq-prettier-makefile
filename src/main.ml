@@ -142,6 +142,7 @@ let resolve_error state =
         }
 
 let is_done = ref false
+let todo = Queue.create ()
 
 let print_line state = function
   | COQC file ->
@@ -180,6 +181,7 @@ let print_line state = function
   | PRETTY_TABLE _ ->
       let state = resolve_error state in
       is_done := true;
+      Queue.clear todo;
       state
   | Done d ->
       let state = resolve_error state in
@@ -204,15 +206,15 @@ let print_line state = function
 
 let str_end = "coq-prettier-makefile-done"
 let update_time = 1.
-let todo = Queue.create ()
 
 let rec fetch_input ic =
   try
-    let line = input_line ic in
-    if line = str_end then is_done := true
-    else (
-      Queue.add line todo;
-      fetch_input ic)
+    if not !is_done then
+      let line = input_line ic in
+      if line = str_end then is_done := true
+      else (
+        Queue.add line todo;
+        fetch_input ic)
   with
   | End_of_file ->
       Unix.sleepf update_time;
