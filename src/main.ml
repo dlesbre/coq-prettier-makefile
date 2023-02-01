@@ -141,6 +141,8 @@ let resolve_error state =
           building = update_status file status state.building;
         }
 
+let is_done = ref false
+
 let print_line state = function
   | COQC file ->
       let state = resolve_error state in
@@ -175,9 +177,9 @@ let print_line state = function
         [ ANSITerminal.Bold; ANSITerminal.green ]
         "Creating makefile with coq_makefile\n";
       state
-  | PRETTY_TABLE line ->
+  | PRETTY_TABLE _ ->
       let state = resolve_error state in
-      ANSITerminal.printf [] "\n%s\n" line;
+      is_done := true;
       state
   | Done d ->
       let state = resolve_error state in
@@ -203,7 +205,6 @@ let print_line state = function
 let str_end = "coq-prettier-makefile-done"
 let update_time = 1.
 let todo = Queue.create ()
-let is_done = ref false
 
 let rec fetch_input ic =
   try
