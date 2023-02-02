@@ -265,4 +265,6 @@ let _ =
   in
   let _ = Thread.create fetch_input in_c in
   let _ = main state (Unix.time ()) in
+  (* Rings terminal bell *)
+  ANSITerminal.printf [] "\007";
   Unix.close_process_full (in_c, out_c, err_c)
