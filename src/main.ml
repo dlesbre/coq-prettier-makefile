@@ -291,7 +291,7 @@ let rec build_path target smap = function
 let add_v_file file smap =
   if Filename.check_suffix file ".v" then
     let target = file ^ "o" in
-    build_path target smap (String.split_on_char '/' file)
+    build_path target smap (String.split_on_char '/' target)
   else smap
 
 let rec parse_coqproject lexbuf smap =
@@ -326,7 +326,8 @@ let get_argv () =
   let argv = "TIMED=1" :: List.tl argv in
   let smap = parse_coqproject "./_CoqProject" in
   let targets, argv = parse_argv smap [] [] argv in
-  Format.sprintf "TGTS=\"%s\"" (String.concat " " targets) :: argv
+  if targets = [] then argv
+  else Format.sprintf "TGTS=\"%s\"" (String.concat " " targets) :: argv
 
 let main () =
   Sys.catch_break true;
