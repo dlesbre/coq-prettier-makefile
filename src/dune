@@ -2,3 +2,6 @@
  (public_name coq-make)
  (name main)
  (libraries ANSITerminal str threads))
+
+(ocamllex
+ (modules coq_project))

@@ -4,6 +4,8 @@ module LS_Set = Set.Make (struct
   let compare = compare
 end)
 
+module SMap = Map.Make (String)
+
 type compiling = { file : string; status : Utils.status; start_time : float }
 
 type state = {
@@ -31,6 +33,7 @@ type line =
   | Unknown of string
 
 let parse_line line =
+  let trimed = String.trim line in
   (* stop if return some t, else continue *)
   let ( let* ) x f = match x with Some t -> t | None -> f () in
   let if_ b c = if b then Some c else None in
@@ -38,18 +41,15 @@ let parse_line line =
   let* () = if_ (line = "COQDEP VFILES") COQDEP in
   let* () = if_ (line = "CLEAN") CLEAN in
   let* () =
-    if_
-      (String.starts_with ~prefix:"coq_makefile" (String.trim line))
-      (COQ_MAKEFILE line)
+    if_ (String.starts_with ~prefix:"coq_makefile" trimed) (COQ_MAKEFILE line)
   in
   let* () =
     if_
-      (String.starts_with ~prefix:"Time |" (String.trim line))
+      (String.starts_with ~prefix:"Time |" trimed
+      || String.starts_with ~prefix:"After |" trimed)
       (PRETTY_TABLE line)
   in
-  let* () =
-    if_ (String.starts_with ~prefix:"make" (String.trim line)) (Make line)
-  in
+  let* () = if_ (String.starts_with ~prefix:"make" trimed) (Make line) in
   let* () =
     try Scanf.sscanf line "COQC %s" (fun s -> Some (COQC s))
     with Scanf.Scan_failure _ -> None
@@ -221,7 +221,7 @@ let rec fetch_input ic =
       fetch_input ic
   | Sys.Break -> Thread.exit ()
 
-let rec main state start =
+let rec mainloop state start =
   try
     if Queue.is_empty todo then (
       let state = clear_current state in
@@ -233,18 +233,18 @@ let rec main state start =
       else
         let state = print_current state in
         Unix.sleepf update_time;
-        main state start)
+        mainloop state start)
     else
       let line = Queue.take todo in
       let line = parse_line line in
       let state = clear_current state in
       let state = print_line state line in
       let state = print_current state in
-      main state start
+      mainloop state start
   with
   | End_of_file ->
       Unix.sleepf update_time;
-      main state start
+      mainloop state start
   | Sys.Break ->
       let state = clear_current state in
       let state = resolve_error state in
@@ -252,9 +252,85 @@ let rec main state start =
         (Utils.pretty_time (Unix.time () -. start));
       state
 
-let _ =
+(* Found list on https://coq.inria.fr/refman/practical-tools/utilities.html *)
+let coq_makefile_targets =
+  [
+    "pre-all";
+    "post-all";
+    "install-extra";
+    "install-doc";
+    "uninstall";
+    "uninstall-doc";
+    "clean";
+    "cleanall";
+    "archclean";
+    "merlin-hook";
+    "pretty-timed";
+    "print-pretty-timed-diff";
+    "pretty-timed-before";
+    "pretty-timed-after";
+    "print-pretty-single-time-diff";
+    "only";
+  ]
+
+let smap_safe_add k v m = if SMap.mem k m then m else SMap.add k v m
+
+(* Add all partial path to the map of matchings
+   so foo/bar/t.v will be matched by
+   foo/bar/t bar/t and t (with or without .v) *)
+let rec build_path target smap = function
+  | [] -> smap
+  | f :: fs ->
+      let partial = String.concat "/" (f :: fs) in
+      let smap = smap_safe_add partial target smap in
+      let smap =
+        smap_safe_add (Filename.remove_extension partial) target smap
+      in
+      build_path target smap fs
+
+let add_v_file file smap =
+  if Filename.check_suffix file ".v" then
+    let target = file ^ "o" in
+    build_path target smap (String.split_on_char '/' file)
+  else smap
+
+let rec parse_coqproject lexbuf smap =
+  try
+    match Coq_project.token lexbuf with
+    | Arg s -> parse_coqproject lexbuf (add_v_file s smap)
+    | Eof -> smap
+  with _ -> smap
+
+let parse_coqproject file =
+  if Sys.file_exists file then
+    try
+      let ic = open_in file in
+      let lexbuf = Lexing.from_channel ic in
+      parse_coqproject lexbuf SMap.empty
+    with _ -> SMap.empty
+  else SMap.empty
+
+let rec parse_argv smap targets argv = function
+  | [] -> (List.rev targets, List.rev argv)
+  | arg :: args -> (
+      if String.starts_with ~prefix:"-" arg || List.mem arg coq_makefile_targets
+      then parse_argv smap targets (arg :: argv) args
+      else
+        match SMap.find_opt arg smap with
+        | Some s -> parse_argv smap (s :: targets) argv args
+        | None -> parse_argv smap targets (arg :: argv) args)
+
+let get_argv () =
+  let argv = Array.to_list Sys.argv in
+  (* strip command name *)
+  let argv = "TIMED=1" :: List.tl argv in
+  let smap = parse_coqproject "./_CoqProject" in
+  let targets, argv = parse_argv smap [] [] argv in
+  Format.sprintf "TGTS=\"%s\"" (String.concat " " targets) :: argv
+
+let main () =
   Sys.catch_break true;
-  let argv = Array.to_list (Array.sub Sys.argv 1 (Array.length Sys.argv - 1)) in
+  let argv = get_argv () in
   let in_c, out_c, err_c =
     Unix.open_process_full
       (Filename.quote_command "make" argv ^ "; echo " ^ str_end)
@@ -264,7 +340,9 @@ let _ =
     { building = []; seen = LS_Set.empty; error = None; printed = false }
   in
   let _ = Thread.create fetch_input in_c in
-  let _ = main state (Unix.time ()) in
+  let _ = mainloop state (Unix.time ()) in
   (* Rings terminal bell *)
   ANSITerminal.printf [] "\007";
   Unix.close_process_full (in_c, out_c, err_c)
+
+let _ = main ()
