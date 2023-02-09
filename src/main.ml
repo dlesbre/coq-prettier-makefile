@@ -26,42 +26,34 @@ type line =
     }
   | Make of string
   | Error of Location.t * string list
-  | COQDEP
+  | COQDEP of string
   | CLEAN
   | COQ_MAKEFILE of string
   | PRETTY_TABLE of string
   | Unknown of string
 
+let is_prefix prefix line = String.starts_with ~prefix line
+let ( let* ) x f = match x with Some t -> t | None -> f ()
+let trim_start = Str.regexp {|\s*["']?\s*|}
+
 let parse_line line =
-  let trimed = String.trim line in
+  let trimed = Str.replace_first trim_start "" line in
   (* stop if return some t, else continue *)
-  let ( let* ) x f = match x with Some t -> t | None -> f () in
-  let if_ b c = if b then Some c else None in
   let* () = Option.map (fun x -> Error (x, [])) (Location.string2loc line) in
-  let* () = if_ (line = "COQDEP VFILES") COQDEP in
-  let* () = if_ (line = "CLEAN") CLEAN in
-  let* () =
-    if_ (String.starts_with ~prefix:"coq_makefile" trimed) (COQ_MAKEFILE line)
-  in
-  let* () =
-    if_
-      (String.starts_with ~prefix:"Time |" trimed
-      || String.starts_with ~prefix:"After |" trimed)
-      (PRETTY_TABLE line)
-  in
-  let* () = if_ (String.starts_with ~prefix:"make" trimed) (Make line) in
-  let* () =
-    try Scanf.sscanf line "COQC %s" (fun s -> Some (COQC s))
-    with Scanf.Scan_failure _ -> None
-  in
-  let* () =
-    try
-      Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
-        (fun file real user sys mem ->
-          Some (Done { file; real; user; sys; mem }))
-    with Scanf.Scan_failure _ -> None
-  in
-  Unknown line
+  if is_prefix "COQDEP" line then
+    COQDEP (Str.replace_first (Str.regexp "COQDEP[ \t\n\r]+") "" line)
+  else if line = "CLEAN" then CLEAN
+  else if is_prefix "coq_makefile" trimed then COQ_MAKEFILE line
+  else if is_prefix "Time |" trimed || is_prefix "After |" trimed then
+    PRETTY_TABLE line
+  else if is_prefix "make" trimed then Make line
+  else
+    try Scanf.sscanf line "COQC %s" (fun s -> COQC s)
+    with Scanf.Scan_failure _ -> (
+      try
+        Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
+          (fun file real user sys mem -> Done { file; real; user; sys; mem })
+      with Scanf.Scan_failure _ -> Unknown line)
 
 let print_current state =
   if not state.printed then (
@@ -155,11 +147,11 @@ let print_line state = function
         }
       in
       state
-  | COQDEP ->
+  | COQDEP s ->
       let state = resolve_error state in
       ANSITerminal.printf
         [ ANSITerminal.Bold; ANSITerminal.green ]
-        "Finding dependencies with COQDEP\n";
+        "Finding dependencies with coqdep for %s\n" s;
       state
   | CLEAN ->
       let state = resolve_error state in
@@ -313,8 +305,8 @@ let parse_coqproject file =
 let rec parse_argv smap targets argv = function
   | [] -> (List.rev targets, List.rev argv)
   | arg :: args -> (
-      if String.starts_with ~prefix:"-" arg || List.mem arg coq_makefile_targets
-      then parse_argv smap targets (arg :: argv) args
+      if is_prefix "-" arg || List.mem arg coq_makefile_targets then
+        parse_argv smap targets (arg :: argv) args
       else
         match SMap.find_opt arg smap with
         | Some s -> parse_argv smap (s :: targets) argv args
