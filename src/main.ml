@@ -305,8 +305,11 @@ let parse_coqproject file =
 let rec parse_argv smap targets argv = function
   | [] -> (List.rev targets, List.rev argv)
   | arg :: args -> (
-      if is_prefix "-" arg || List.mem arg coq_makefile_targets then
-        parse_argv smap targets (arg :: argv) args
+      if
+        is_prefix "-" arg
+        || List.mem arg coq_makefile_targets
+        || String.contains arg '='
+      then parse_argv smap targets (arg :: argv) args
       else
         match SMap.find_opt arg smap with
         | Some s -> parse_argv smap (s :: targets) argv args
@@ -326,7 +329,7 @@ let main () =
   let argv = get_argv () in
   let in_c, out_c, err_c =
     Unix.open_process_full
-      (Filename.quote_command "make" argv ^ "; echo " ^ str_end)
+      (Filename.quote_command "make" argv ^ " 2>&1; echo " ^ str_end)
       (Unix.environment ())
   in
   let state =
