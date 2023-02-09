@@ -33,6 +33,12 @@ type line =
   | PRETTY_TABLE of string
   | Unknown of string
 
+let split_path path =
+  let split_char =
+    if String.length Filename.dir_sep = 1 then Filename.dir_sep.[0] else '/'
+  in
+  String.split_on_char split_char path
+
 let is_prefix prefix line = String.starts_with ~prefix line
 let ( let* ) x f = match x with Some t -> t | None -> f ()
 let trim_start = Str.regexp {|[ \t\n\r]*["']?[ \t\n\r]*|}
@@ -93,10 +99,24 @@ let contains s1 s2 =
 
 let is_error msg = contains msg "Error" || contains msg "Command exited"
 
+let files_match a b =
+  let a = Location.pretty_filename a in
+  let b = Location.pretty_filename b in
+  let path_a = List.rev (split_path a) in
+  let path_b = List.rev (split_path b) in
+  let rec compare l r =
+    match (l, r) with
+    | [], [] -> true
+    | [], _ -> Filename.is_relative a && not (Filename.is_relative b)
+    | _, [] -> Filename.is_relative b && not (Filename.is_relative a)
+    | a :: a', b :: b' -> a = b && compare a' b'
+  in
+  compare path_a path_b
+
 let rec list_rm_assoc file = function
   | [] -> (None, [])
   | t :: q ->
-      if t.file = file then (Some t, q)
+      if files_match t.file file then (Some t, q)
       else
         let elem, list = list_rm_assoc file q in
         (elem, t :: list)
@@ -104,7 +124,7 @@ let rec list_rm_assoc file = function
 let rec update_status file status = function
   | [] -> [ { file; status; start_time = Unix.time () } ]
   | t :: q ->
-      if t.file = file then
+      if files_match t.file file then
         { t with status = Utils.max_status status t.status } :: q
       else t :: update_status file status q
 
@@ -286,7 +306,7 @@ let smap_safe_add k v m = if SMap.mem k m then m else SMap.add k v m
 let rec build_path target smap = function
   | [] -> smap
   | f :: fs ->
-      let partial = String.concat "/" (f :: fs) in
+      let partial = String.concat Filename.dir_sep (f :: fs) in
       let smap = smap_safe_add partial target smap in
       let smap =
         smap_safe_add (Filename.remove_extension partial) target smap
@@ -296,7 +316,7 @@ let rec build_path target smap = function
 let add_v_file file smap =
   if Filename.check_suffix file ".v" then
     let target = file ^ "o" in
-    build_path target smap (String.split_on_char '/' target)
+    build_path target smap (split_path target)
   else smap
 
 let rec parse_coqproject lexbuf smap =
