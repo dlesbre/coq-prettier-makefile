@@ -1,6 +1,7 @@
-type status = S_Ok | S_Error | S_Warning | S_Compiling
+type status = S_Ok | S_Error | S_Warning | S_Compiling | S_Testing | S_TestOk
 
 val max_status : status -> status -> status
+val status_done : status -> status
 
 (* Printer functions with fancy formatting *)
 (* val print_status : status -> unit

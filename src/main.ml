@@ -17,6 +17,7 @@ type state = {
 
 type line =
   | COQC of string
+  | COQTEST of string
   | Done of {
       file : string;
       real : float;
@@ -50,10 +51,12 @@ let parse_line line =
   else
     try Scanf.sscanf line "COQC %s" (fun s -> COQC s)
     with Scanf.Scan_failure _ -> (
-      try
-        Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
-          (fun file real user sys mem -> Done { file; real; user; sys; mem })
-      with Scanf.Scan_failure _ -> Unknown line)
+      try Scanf.sscanf line "COQTEST %s" (fun s -> COQTEST s)
+      with Scanf.Scan_failure _ -> (
+        try
+          Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
+            (fun file real user sys mem -> Done { file; real; user; sys; mem })
+        with Scanf.Scan_failure _ -> Unknown line))
 
 let print_current state =
   if not state.printed then (
@@ -147,6 +150,16 @@ let print_line state = function
         }
       in
       state
+  | COQTEST file ->
+      let state = resolve_error state in
+      let file = Location.pretty_filename ~extension:".v" file in
+      let state =
+        {
+          state with
+          building = update_status file Utils.S_Testing state.building;
+        }
+      in
+      state
   | COQDEP s ->
       let state = resolve_error state in
       ANSITerminal.printf
@@ -182,7 +195,7 @@ let print_line state = function
       let status =
         match status with
         | None -> Utils.S_Ok
-        | Some s -> Utils.max_status Utils.S_Ok s.status
+        | Some s -> Utils.status_done s.status
       in
       Utils.print_file_line file status d.real (Some d.mem);
       { state with building }

@@ -1,17 +1,26 @@
-type status = S_Ok | S_Error | S_Warning | S_Compiling
+type status = S_Ok | S_Error | S_Warning | S_Compiling | S_Testing | S_TestOk
 
 let print_status = function
   | S_Ok -> ANSITerminal.printf [ ANSITerminal.green ] "DONE     "
+  | S_TestOk -> ANSITerminal.printf [ ANSITerminal.green ] "TEST OK  "
   | S_Error -> ANSITerminal.printf [ ANSITerminal.red ] "ERROR    "
   | S_Warning -> ANSITerminal.printf [ ANSITerminal.magenta ] "WARNING  "
   | S_Compiling -> ANSITerminal.printf [] "COMPILING"
+  | S_Testing -> ANSITerminal.printf [] "TESTING  "
 
 let max_status l r =
   match (l, r) with
   | S_Error, _ | _, S_Error -> S_Error
   | S_Warning, _ | _, S_Warning -> S_Warning
   | S_Ok, _ | _, S_Ok -> S_Ok
-  | S_Compiling, S_Compiling -> S_Compiling
+  | S_TestOk, _ | _, S_TestOk -> S_TestOk
+  | S_Compiling, _ | _, S_Compiling -> S_Compiling
+  | S_Testing, S_Testing -> S_Testing
+
+let status_done = function
+  | S_Compiling -> S_Ok
+  | S_Testing -> S_TestOk
+  | s -> s
 
 let pretty_time t =
   let t' = abs (int_of_float t) in
