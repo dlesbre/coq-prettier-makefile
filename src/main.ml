@@ -210,7 +210,7 @@ let print_line state = function
       { state with error = Some (l, s) }
 
 let str_end = "coq-prettier-makefile-done"
-let update_time = 1.
+let update_time = 0.05
 
 let rec fetch_input ic =
   try
