@@ -224,7 +224,7 @@ let rec fetch_input ic =
   | End_of_file ->
       Unix.sleepf update_time;
       fetch_input ic
-  | Sys.Break -> Thread.exit ()
+  | Sys.Break | Sys_error _ -> Thread.exit ()
 
 let rec mainloop state start =
   try
