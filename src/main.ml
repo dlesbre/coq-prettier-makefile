@@ -34,7 +34,7 @@ type line =
 
 let is_prefix prefix line = String.starts_with ~prefix line
 let ( let* ) x f = match x with Some t -> t | None -> f ()
-let trim_start = Str.regexp {|\s*["']?\s*|}
+let trim_start = Str.regexp {|[ \t\n\r]*["']?[ \t\n\r]*|}
 
 let parse_line line =
   let trimed = Str.replace_first trim_start "" line in
