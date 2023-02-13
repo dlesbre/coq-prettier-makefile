@@ -8,3 +8,4 @@ val show_loc : t -> ANSITerminal.style list -> unit
 (** Prints file at location (if it exists/can be opened) *)
 
 val pretty_filename : ?extension:string -> string -> string
+(** Remove leading ./, removes extension if supplied and matches *)

@@ -8,8 +8,17 @@ module SMap = Map.Make (String)
 
 type compiling = { file : string; status : Utils.status; start_time : float }
 
+type compile_result = {
+  filename : string;
+  real : float;
+  user : float;
+  sys : float;
+  mem : int;
+}
+
 type state = {
   building : compiling list;
+  built : (Utils.status * compile_result) list;
   error : (Location.t * string list) option;
   seen : LS_Set.t;
   printed : bool;
@@ -18,13 +27,7 @@ type state = {
 type line =
   | COQC of string
   | COQTEST of string
-  | Done of {
-      file : string;
-      real : float;
-      user : float;
-      sys : float;
-      mem : int;
-    }
+  | Done of compile_result
   | Make of string
   | Error of Location.t * string list
   | COQDEP of string
@@ -61,7 +64,8 @@ let parse_line line =
       with Scanf.Scan_failure _ -> (
         try
           Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
-            (fun file real user sys mem -> Done { file; real; user; sys; mem })
+            (fun filename real user sys mem ->
+              Done { filename; real; user; sys; mem })
         with Scanf.Scan_failure _ -> Unknown line))
 
 let print_current state =
@@ -210,7 +214,7 @@ let print_line state = function
       state
   | Done d ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:".vo" d.file in
+      let file = Location.pretty_filename ~extension:".vo" d.filename in
       let status, building = list_rm_assoc file state.building in
       let status =
         match status with
@@ -218,7 +222,7 @@ let print_line state = function
         | Some s -> Utils.status_done s.status
       in
       Utils.print_file_line file status d.real (Some d.mem);
-      { state with building }
+      { state with building; built = (status, d) :: state.built }
   | Unknown u -> (
       match state.error with
       | Some (l, s) -> { state with error = Some (l, u :: s) }
@@ -366,7 +370,13 @@ let main () =
       (Unix.environment ())
   in
   let state =
-    { building = []; seen = LS_Set.empty; error = None; printed = false }
+    {
+      building = [];
+      seen = LS_Set.empty;
+      error = None;
+      printed = false;
+      built = [];
+    }
   in
   let _ = Thread.create fetch_input in_c in
   let _ = mainloop state (Unix.time ()) in
