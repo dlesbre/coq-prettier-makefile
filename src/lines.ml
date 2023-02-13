@@ -239,3 +239,70 @@ let print_line state = function
   | Error (l, s) ->
       let state = resolve_error state in
       { state with error = Some (l, s) }
+
+type acc = {
+  time : float;
+  max_mem : int;
+  nb_ok : int;
+  nb_testok : int;
+  nb_warnings : int;
+  nb_error : int;
+}
+
+let folder acc (status, res) =
+  let time = acc.time +. res.real in
+  let max_mem = max acc.max_mem res.mem in
+  let acc = { acc with time; max_mem } in
+  let open Utils in
+  match status with
+  | S_Ok -> { acc with nb_ok = acc.nb_ok + 1 }
+  | S_TestOk -> { acc with nb_testok = acc.nb_testok + 1 }
+  | S_Warning -> { acc with nb_warnings = acc.nb_warnings + 1 }
+  | S_Error -> { acc with nb_error = acc.nb_error + 1 }
+  | _ -> acc
+
+let print_final is_ok time state =
+  let open ANSITerminal in
+  let state = resolve_error state in
+  printf [ Bold ] "%s in %s\n"
+    (if is_ok then "Process ended" else "INTERRUPTED")
+    (Utils.pretty_time time);
+  let final =
+    List.fold_left folder
+      {
+        time = 0.;
+        max_mem = 0;
+        nb_ok = 0;
+        nb_testok = 0;
+        nb_warnings = 0;
+        nb_error = 0;
+      }
+      state.built
+  in
+  let s, e =
+    if final.nb_ok != 0 then (
+      printf [ Bold ] "Compiled %d files" final.nb_ok;
+      (", ", "\n"))
+    else ("", "")
+  in
+  let s, e =
+    if final.nb_testok != 0 then (
+      printf [ Bold ] "%sRan %d tests" s final.nb_testok;
+      (", ", "\n"))
+    else (s, e)
+  in
+  let s, e =
+    if final.nb_warnings != 0 then (
+      printf [ Bold ] "%s" s;
+      printf [ Bold; magenta ] "%d warnings" final.nb_warnings;
+      (", ", "\n"))
+    else (s, e)
+  in
+  if final.nb_error != 0 then (
+    printf [ Bold ] "%s" s;
+    printf [ Bold; red ] "%d errors" final.nb_error);
+  printf [ Bold ] "%s" e;
+  printf [ Bold ] "Total time %s, max memory used: %s\n"
+    (Utils.pretty_time final.time)
+    (Utils.pretty_size final.max_mem);
+  state

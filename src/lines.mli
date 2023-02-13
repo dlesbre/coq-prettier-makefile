@@ -7,8 +7,13 @@ val split_path : string -> string list
 
 (* ==== Line and state manipulation ==== *)
 val parse_line : string -> line
+
 val print_line : state -> line -> state
-val resolve_error : state -> state
+(** Print result of current line, and add it's info to the state *)
+
+val print_final : bool -> float -> state -> state
+(** Prints a final widget with totals/max, float is time since started
+    the bool is true if terminated normally, false for interrupted (eg Ctrl+C) *)
 
 val print_current : state -> state
 (** Prints currently compiling files *)

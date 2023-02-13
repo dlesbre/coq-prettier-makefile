@@ -22,11 +22,7 @@ let rec mainloop state start =
   try
     if Queue.is_empty todo then (
       let state = clear_current state in
-      if !is_done then (
-        let state = resolve_error state in
-        ANSITerminal.printf [ ANSITerminal.Bold ] "Process ended in %s\n"
-          (Utils.pretty_time (Unix.time () -. start));
-        state)
+      if !is_done then print_final true (Unix.time () -. start) state
       else
         let state = print_current state in
         Unix.sleepf update_time;
@@ -44,10 +40,7 @@ let rec mainloop state start =
       mainloop state start
   | Sys.Break ->
       let state = clear_current state in
-      let state = resolve_error state in
-      ANSITerminal.printf [ ANSITerminal.Bold ] "INTERRUPTED in %s\n"
-        (Utils.pretty_time (Unix.time () -. start));
-      state
+      print_final false (Unix.time () -. start) state
 
 (* Found list on https://coq.inria.fr/refman/practical-tools/utilities.html *)
 let coq_makefile_targets =

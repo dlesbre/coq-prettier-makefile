@@ -9,6 +9,7 @@ val status_done : status -> status
    val print_size : int option -> unit
    val print_file : string -> unit *)
 val pretty_time : float -> string
+val pretty_size : int -> string
 val print_error : string -> ANSITerminal.style list -> unit
 val print_file_line : string -> status -> float -> int option -> unit
 val print_separator : unit -> unit
