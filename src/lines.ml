@@ -302,7 +302,8 @@ let print_final is_ok time state =
     printf [ Bold ] "%s" s;
     printf [ Bold; red ] "%d errors" final.nb_error);
   printf [ Bold ] "%s" e;
-  printf [ Bold ] "Total time %s, max memory used: %s\n"
-    (Utils.pretty_time final.time)
-    (Utils.pretty_size final.max_mem);
+  if final.time > 0. then
+    printf [ Bold ] "Total time %s, max memory used: %s\n"
+      (Utils.pretty_time final.time)
+      (Utils.pretty_size ~padding:0 final.max_mem);
   state
