@@ -26,8 +26,7 @@ let pretty_time t =
   let t' = abs (int_of_float t) in
   let hours = t' / 3600 in
   let t' = t' mod 3600 in
-  let minutes = (t' / 60) - (60 * hours) in
-  Format.sprintf "%02d:%02d:%02d" hours minutes (t' mod 60)
+  Format.sprintf "%02d:%02d:%02d" hours (t' / 60) (t' mod 60)
 
 let time_breaks =
   [
