@@ -298,9 +298,13 @@ let print_final is_ok time state =
       (", ", "\n"))
     else (s, e)
   in
-  if final.nb_error != 0 then (
-    printf [ Bold ] "%s" s;
-    printf [ Bold; red ] "%d errors" final.nb_error);
+  let e =
+    if final.nb_error != 0 then (
+      printf [ Bold ] "%s" s;
+      printf [ Bold; red ] "%d errors" final.nb_error;
+      "\n")
+    else e
+  in
   printf [ Bold ] "%s" e;
   if final.time > 0. then
     printf [ Bold ] "Total time %s, max memory used: %s\n"
