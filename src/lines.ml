@@ -264,7 +264,7 @@ let folder acc (status, res) =
 let print_final is_ok time state =
   let open ANSITerminal in
   let state = resolve_error state in
-  printf [ Bold ] "%s in %s\n"
+  printf [ Bold ] "\n%s in %s\n"
     (if is_ok then "Process ended" else "INTERRUPTED")
     (Utils.pretty_time time);
   let final =
