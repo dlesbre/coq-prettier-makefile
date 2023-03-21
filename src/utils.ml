@@ -131,3 +131,28 @@ let print_file_line filename status time mem =
 let print_separator () =
   ANSITerminal.printf [ ANSITerminal.Bold ]
     "---------|----------|-----------|-----------------------------------------------\n"
+
+let spaces = [ ' '; '\n'; '\t' ]
+
+let str2argv str =
+  let len = String.length str in
+  let rec parse_start i l =
+    if i = len then l
+    else if List.mem str.[i] spaces then parse_start (i + 1) l
+    else if List.mem str.[i] [ '\''; '\"' ] then
+      parse_quoted str.[i] (i + 1) (i + 1) l
+    else parse_word i (i + 1) l
+  and parse_word start i l =
+    if i = len then String.sub str start (i - start) :: l
+    else if List.mem str.[i] spaces then
+      parse_start (i + 1) (String.sub str start (i - start) :: l)
+    else if i + 1 < len && str.[i] = '\\' then parse_word start (i + 2) l
+    else parse_word start (i + 1) l
+  and parse_quoted quote start i l =
+    if i = len then String.sub str start (i - start) :: l
+    else if str.[i] = quote then
+      parse_start (i + 1) (String.sub str start (i - start) :: l)
+    else if str.[i] = '\\' then parse_quoted quote start (i + 2) l
+    else parse_quoted quote start (i + 1) l
+  in
+  List.rev (parse_start 0 [])

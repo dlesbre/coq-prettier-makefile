@@ -23,20 +23,22 @@ let read_pair line =
   | _ -> None
 
 (** Remove leading "./" and extension if supplied *)
-let pretty_filename ?extension filename =
+let pretty_filename ?(extension = []) filename =
   let len = String.length filename in
   let filename =
     if String.starts_with ~prefix:"./" filename then
       String.sub filename 2 (len - 2)
     else filename
   in
-  match extension with
-  | None -> filename
-  | Some suffix ->
-      let len_suffix = String.length suffix in
-      if String.ends_with ~suffix filename then
-        String.sub filename 0 (len - len_suffix)
-      else filename
+  let rec rm_extension = function
+    | [] -> filename
+    | suffix :: suffixes ->
+        let len_suffix = String.length suffix in
+        if String.ends_with ~suffix filename then
+          String.sub filename 0 (len - len_suffix)
+        else rm_extension suffixes
+  in
+  rm_extension extension
 
 let string2loc line =
   try

@@ -47,6 +47,25 @@ let is_prefix prefix line = String.starts_with ~prefix line
 let ( let* ) x f = match x with Some t -> t | None -> f ()
 let trim_start = Str.regexp {|[ \t\n\r]*["']?[ \t\n\r]*|}
 
+let rec list_last = function
+  | [] -> None
+  | x :: [] -> Some x
+  | _ :: xs -> list_last xs
+
+let coqc x = COQC x
+
+let matches_coqc line =
+  try Scanf.sscanf line "COQC %s" (fun s -> Some (COQC s))
+  with Scanf.Scan_failure _ -> (
+    match Utils.str2argv line with
+    | "coqc" :: l
+    | "time" :: "coqc" :: l
+    | "time" :: "-f" :: _ :: "coqc" :: l
+    | "command" :: "time" :: "coqc" :: l
+    | "command" :: "time" :: "-f" :: _ :: "coqc" :: l ->
+        Option.map coqc (list_last l)
+    | _ -> None)
+
 let parse_line line =
   let trimed = Str.replace_first trim_start "" line in
   (* stop if return some t, else continue *)
@@ -59,15 +78,14 @@ let parse_line line =
     PRETTY_TABLE line
   else if is_prefix "make" trimed then Make line
   else
-    try Scanf.sscanf line "COQC %s" (fun s -> COQC s)
+    let* () = matches_coqc line in
+    try Scanf.sscanf line "COQTEST %s" (fun s -> COQTEST s)
     with Scanf.Scan_failure _ -> (
-      try Scanf.sscanf line "COQTEST %s" (fun s -> COQTEST s)
-      with Scanf.Scan_failure _ -> (
-        try
-          Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
-            (fun filename real _user _sys mem ->
-              Done { filename; real; _user; _sys; mem })
-        with Scanf.Scan_failure _ -> Unknown line))
+      try
+        Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
+          (fun filename real _user _sys mem ->
+            Done { filename; real; _user; _sys; mem })
+      with Scanf.Scan_failure _ -> Unknown line)
 
 let print_current state =
   if not state.printed then (
@@ -148,7 +166,7 @@ let resolve_error state =
       else
         let state = { state with seen = LS_Set.add (loc, msg) state.seen } in
         let file =
-          Location.pretty_filename ~extension:".v" (Location.get_file loc)
+          Location.pretty_filename ~extension:[".v"] (Location.get_file loc)
         in
         let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
         let color, text, status =
@@ -173,7 +191,7 @@ let todo = Queue.create ()
 let print_line state = function
   | COQC file ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:".v" file in
+      let file = Location.pretty_filename ~extension:[".v"] file in
       let state =
         {
           state with
@@ -183,7 +201,7 @@ let print_line state = function
       state
   | COQTEST file ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:".v" file in
+      let file = Location.pretty_filename ~extension:[".v"]  file in
       let state =
         {
           state with
@@ -221,7 +239,7 @@ let print_line state = function
       state
   | Done d ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:".vo" d.filename in
+      let file = Location.pretty_filename ~extension:[".vo"; ".glob"]  d.filename in
       let status, building = list_rm_assoc file state.building in
       let status =
         match status with

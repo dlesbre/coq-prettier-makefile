@@ -13,3 +13,7 @@ val pretty_size : ?padding:int -> int -> string
 val print_error : string -> ANSITerminal.style list -> unit
 val print_file_line : string -> status -> float -> int option -> unit
 val print_separator : unit -> unit
+
+val str2argv : string -> string list
+(** Basic parsing into shell args
+    ["foo bar with\\ space \"quoted\""] -> ["foo"; "bar"; "with space"; "quoted"] *)
