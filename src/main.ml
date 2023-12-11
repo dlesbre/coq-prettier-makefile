@@ -120,7 +120,12 @@ let get_argv () =
   let smap = parse_coqproject "./_CoqProject" in
   let targets, argv = parse_argv smap [] [] argv in
   if targets = [] then argv
-  else Format.sprintf "TGTS=\"%s\"" (String.concat " " targets) :: argv
+  else
+    let targets = String.concat " " targets in
+    ANSITerminal.printf
+      [ ANSITerminal.Bold; ANSITerminal.green ]
+      "Compiling %s and dependencies@." targets;
+    Format.sprintf "TGTS=\"%s\"" targets :: argv
 
 let main () =
   Sys.catch_break true;
