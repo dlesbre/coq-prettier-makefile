@@ -7,6 +7,11 @@ Coq projects. It prints a nice aligned output with color coded build times and m
 
 ![](render.png)
 
+Also has a feature to pretify error message by adding color and showing the relevant
+file location:
+
+![](warning.png)
+
 ## Installation and usage:
 
 This package requires ANSITerminal to build:
