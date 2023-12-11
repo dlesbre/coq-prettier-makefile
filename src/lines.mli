@@ -1,5 +1,9 @@
 type line
+(** The different types of line a coq makefile outputs *)
+
 type state
+(** Internal state, saves the list of files currently being compiled,
+    accumulates lines for error messages, and other misc info *)
 
 (* ==== string utility functions ==== *)
 val is_prefix : string -> string -> bool
