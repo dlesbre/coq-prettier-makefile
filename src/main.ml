@@ -3,6 +3,10 @@ module SMap = Map.Make (String)
 let str_end = "coq-prettier-makefile-done"
 let update_time = 0.05
 
+(** Switch to true to use TGTS="..." to pass targets to make
+    Newer version of coq_makefile expect regular make targets. *)
+let use_tgts = false
+
 let rec fetch_input ic =
   try
     if not !Lines.is_done then
@@ -119,13 +123,19 @@ let get_argv () =
   let argv = "TIMED=1" :: List.tl argv in
   let smap = parse_coqproject "./_CoqProject" in
   let targets, argv = parse_argv smap [] [] argv in
-  if targets = [] then argv
-  else
-    let targets = String.concat " " targets in
+  if targets = [] then (
     ANSITerminal.printf
       [ ANSITerminal.Bold; ANSITerminal.green ]
-      "Compiling %s and dependencies@." targets;
-    Format.sprintf "TGTS=\"%s\"" targets :: argv
+      "Compiling whole project";
+    argv)
+  else
+    let targets = List.map (fun x -> "'" ^ x ^ "'") targets in
+    let tgts = String.concat " " targets in
+    ANSITerminal.printf
+      [ ANSITerminal.Bold; ANSITerminal.green ]
+      "Compiling %s and dependencies\n" tgts;
+    if use_tgts then Format.sprintf "TGTS=\"%s\"" tgts :: argv
+    else targets @ argv
 
 let main () =
   Sys.catch_break true;
