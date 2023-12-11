@@ -1,16 +1,25 @@
-type status = S_Ok | S_Error | S_Warning | S_Compiling | S_Testing | S_TestOk
+type status =
+  | S_Ok
+  | S_Error
+  | S_Warning
+  | S_Compiling
+  | S_Testing
+  | S_TestOk
+  | S_TestFail
 
 let print_status = function
-  | S_Ok -> ANSITerminal.printf [ ANSITerminal.green ] "DONE     "
-  | S_TestOk -> ANSITerminal.printf [ ANSITerminal.green ] "TEST OK  "
-  | S_Error -> ANSITerminal.printf [ ANSITerminal.red ] "ERROR    "
-  | S_Warning -> ANSITerminal.printf [ ANSITerminal.magenta ] "WARNING  "
-  | S_Compiling -> ANSITerminal.printf [] "COMPILING"
-  | S_Testing -> ANSITerminal.printf [] "TESTING  "
+  | S_Ok -> ANSITerminal.printf [ ANSITerminal.green ] "DONE       "
+  | S_TestOk -> ANSITerminal.printf [ ANSITerminal.green ] "TEST OK    "
+  | S_Error -> ANSITerminal.printf [ ANSITerminal.red ] "ERROR      "
+  | S_TestFail -> ANSITerminal.printf [ ANSITerminal.red ] "TEST FAIL  "
+  | S_Warning -> ANSITerminal.printf [ ANSITerminal.magenta ] "WARNING    "
+  | S_Compiling -> ANSITerminal.printf [] "COMPILING  "
+  | S_Testing -> ANSITerminal.printf [] "TESTING    "
 
 let max_status l r =
   match (l, r) with
   | S_Error, _ | _, S_Error -> S_Error
+  | S_TestFail, _ | _, S_TestFail -> S_TestFail
   | S_Warning, _ | _, S_Warning -> S_Warning
   | S_Ok, _ | _, S_Ok -> S_Ok
   | S_TestOk, _ | _, S_TestOk -> S_TestOk
@@ -130,7 +139,7 @@ let print_file_line filename status time mem =
 
 let print_separator () =
   ANSITerminal.printf [ ANSITerminal.Bold ]
-    "---------|----------|-----------|-----------------------------------------------\n"
+    "---------|----------|-------------|-----------------------------------------------\n"
 
 let spaces = [ ' '; '\n'; '\t' ]
 

@@ -33,7 +33,7 @@ let rec mainloop state start =
         mainloop state start)
     else
       let line = Queue.take todo in
-      let line = parse_line line in
+      let line = parse_line line state in
       let state = clear_current state in
       let state = print_line state line in
       let state = print_current state in

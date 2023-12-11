@@ -1,4 +1,11 @@
-type status = S_Ok | S_Error | S_Warning | S_Compiling | S_Testing | S_TestOk
+type status =
+  | S_Ok
+  | S_Error
+  | S_Warning
+  | S_Compiling
+  | S_Testing
+  | S_TestOk
+  | S_TestFail
 
 val max_status : status -> status -> status
 val status_done : status -> status

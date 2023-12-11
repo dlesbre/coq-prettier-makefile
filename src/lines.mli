@@ -10,7 +10,7 @@ val is_prefix : string -> string -> bool
 val split_path : string -> string list
 
 (* ==== Line and state manipulation ==== *)
-val parse_line : string -> line
+val parse_line : string -> state -> line
 
 val print_line : state -> line -> state
 (** Print result of current line, and add it's info to the state *)

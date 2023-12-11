@@ -4,6 +4,8 @@ module LS_Set = Set.Make (struct
   let compare = compare
 end)
 
+let wait = 0.5
+
 type compiling = { file : string; status : Utils.status; start_time : float }
 
 type compile_result = {
@@ -19,7 +21,8 @@ type line =
   | COQTEST of string
   | Done of compile_result
   | Make of string
-  | Error of Location.t * string list
+  | Error of Location.t (* locs *)
+  | TestError of string (* file *)
   | COQDEP of string
   | CLEAN
   | COQ_MAKEFILE of string
@@ -28,8 +31,11 @@ type line =
 
 type state = {
   building : compiling list;
-  built : (Utils.status * compile_result) list;
-  error : (Location.t * string list) option;
+  (* For test, output is compared AFTER compilation, so they aren't displayed right away
+     we keep their time (float) and printed status here *)
+  built : (Utils.status * compile_result * float * bool) list;
+  error : ((Location.t, string) Either.t * string list) option;
+  (* Coq error if location, Test error if string *)
   seen : LS_Set.t;
   printed : bool;
 }
@@ -66,10 +72,24 @@ let matches_coqc line =
         Option.map coqc (list_last l)
     | _ -> None)
 
-let parse_line line =
+let parse_test line state =
+  try
+    Scanf.sscanf line "--- %s " (fun file ->
+        let file = Filename.chop_extension file in
+        match
+          List.find_opt
+            (fun (_, x, _, _) -> Filename.chop_extension x.filename = file)
+            state.built
+        with
+        | Some _ -> Some file
+        | None -> None)
+  with Scanf.Scan_failure _ -> None
+
+let parse_line line state =
   let trimed = Str.replace_first trim_start "" line in
   (* stop if return some t, else continue *)
-  let* () = Option.map (fun x -> Error (x, [])) (Location.string2loc line) in
+  let* () = Option.map (fun x -> Error x) (Location.string2loc line) in
+  let* () = Option.map (fun x -> TestError x) (parse_test line state) in
   if is_prefix "COQDEP" line then
     COQDEP (Str.replace_first (Str.regexp "COQDEP[ \t\n\r]+") "" line)
   else if line = "CLEAN" then CLEAN
@@ -157,16 +177,35 @@ let rec update_status file status = function
         { t with status = Utils.max_status status t.status } :: q
       else t :: update_status file status q
 
+(* strip's diff "+++" from test error messages*)
+let rec strip_ppp = function
+  | [] -> []
+  | msg :: [] as l -> if String.starts_with ~prefix:"+++ " msg then [] else l
+  | msg :: msgs -> msg :: strip_ppp msgs
+
+let rec print_test force time = function
+  | [] -> []
+  | ((status, compiling, t, printed) as info) :: l ->
+      if (not printed) && (force || t +. wait < time) then (
+        Utils.print_file_line
+          (Location.pretty_filename ~extension:[ ".vo" ] compiling.filename)
+          status compiling.real (Some compiling.mem);
+        (status, compiling, t, true) :: print_test force time l)
+      else info :: print_test force time l
+
 let resolve_error state =
   let open ANSITerminal in
+  let state =
+    { state with built = print_test false (Unix.time ()) state.built }
+  in
   match state.error with
   | None -> state
-  | Some (loc, msg) ->
+  | Some (Left loc, msg) ->
       if LS_Set.mem (loc, msg) state.seen then { state with error = None }
       else
         let state = { state with seen = LS_Set.add (loc, msg) state.seen } in
         let file =
-          Location.pretty_filename ~extension:[".v"] (Location.get_file loc)
+          Location.pretty_filename ~extension:[ ".v" ] (Location.get_file loc)
         in
         let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
         let color, text, status =
@@ -184,6 +223,24 @@ let resolve_error state =
           error = None;
           building = update_status file status state.building;
         }
+  | Some (Right file, msg) ->
+      let msg = strip_ppp msg in
+      let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
+      printf [ Bold; red ] "Test Failed";
+      printf [] ": %s\n" file;
+      Utils.print_error msg [ red ];
+      printf [] "\n";
+      {
+        state with
+        error = None;
+        built =
+          List.map
+            (fun (status, c, i, b) ->
+              if Filename.chop_extension c.filename = file then
+                (Utils.S_TestFail, c, i, b)
+              else (status, c, i, b))
+            state.built;
+      }
 
 let is_done = ref false
 let todo = Queue.create ()
@@ -191,7 +248,7 @@ let todo = Queue.create ()
 let print_line state = function
   | COQC file ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:[".v"] file in
+      let file = Location.pretty_filename ~extension:[ ".v" ] file in
       let state =
         {
           state with
@@ -201,7 +258,7 @@ let print_line state = function
       state
   | COQTEST file ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:[".v"]  file in
+      let file = Location.pretty_filename ~extension:[ ".v" ] file in
       let state =
         {
           state with
@@ -239,24 +296,33 @@ let print_line state = function
       state
   | Done d ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:[".vo"; ".glob"]  d.filename in
+      let file =
+        Location.pretty_filename ~extension:[ ".vo"; ".glob" ] d.filename
+      in
       let status, building = list_rm_assoc file state.building in
       let status =
         match status with
         | None -> Utils.S_Ok
         | Some s -> Utils.status_done s.status
       in
-      Utils.print_file_line file status d.real (Some d.mem);
-      { state with building; built = (status, d) :: state.built }
+      let time = Unix.time () in
+      if status != S_TestOk then (
+        Utils.print_file_line file status d.real (Some d.mem);
+        { state with building; built = (status, d, time, true) :: state.built })
+      else
+        { state with building; built = (status, d, time, false) :: state.built }
   | Unknown u -> (
       match state.error with
       | Some (l, s) -> { state with error = Some (l, u :: s) }
       | None ->
           ANSITerminal.printf [] "%s\n" u;
           state)
-  | Error (l, s) ->
+  | Error l ->
       let state = resolve_error state in
-      { state with error = Some (l, s) }
+      { state with error = Some (Left l, []) }
+  | TestError s ->
+      let state = resolve_error state in
+      { state with error = Some (Right s, []) }
 
 type acc = {
   time : float;
@@ -265,9 +331,10 @@ type acc = {
   nb_testok : int;
   nb_warnings : int;
   nb_error : int;
+  nb_testfail : int;
 }
 
-let folder acc (status, res) =
+let folder acc (status, res, _, _) =
   let time = acc.time +. res.real in
   let max_mem = max acc.max_mem res.mem in
   let acc = { acc with time; max_mem } in
@@ -277,10 +344,12 @@ let folder acc (status, res) =
   | S_TestOk -> { acc with nb_testok = acc.nb_testok + 1 }
   | S_Warning -> { acc with nb_warnings = acc.nb_warnings + 1 }
   | S_Error -> { acc with nb_error = acc.nb_error + 1 }
+  | S_TestFail -> { acc with nb_testfail = acc.nb_testfail + 1 }
   | _ -> acc
 
 let print_final is_ok time state =
   let open ANSITerminal in
+  let state = { state with built = print_test true 0.0 state.built } in
   let state = resolve_error state in
   printf [ Bold ] "\n%s in %s\n"
     (if is_ok then "Process ended" else "INTERRUPTED")
@@ -294,6 +363,7 @@ let print_final is_ok time state =
         nb_testok = 0;
         nb_warnings = 0;
         nb_error = 0;
+        nb_testfail = 0;
       }
       state.built
   in
@@ -316,10 +386,17 @@ let print_final is_ok time state =
       (", ", "\n"))
     else (s, e)
   in
-  let e =
+  let s, e =
     if final.nb_error != 0 then (
       printf [ Bold ] "%s" s;
       printf [ Bold; red ] "%d errors" final.nb_error;
+      (", ", "\n"))
+    else (s, e)
+  in
+  let e =
+    if final.nb_testfail != 0 then (
+      printf [ Bold ] "%s" s;
+      printf [ Bold; red ] "%d test failed" final.nb_testfail;
       "\n")
     else e
   in
