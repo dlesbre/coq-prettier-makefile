@@ -1,15 +1,17 @@
-(lang dune 3.6)
+(lang dune 3.0)
 
 (name coqprettiermakefile)
+
+(version 0.1.0)
 
 (generate_opam_files true)
 
 (source
  (github dlesbre/coq-prettier-makefile))
 
-(authors "Dorian Lesbre")
+(authors "Dorian Lesbre <dorian.lesbre@gmail.com>")
 
-(maintainers "Dorian Lesbre")
+(maintainers "Dorian Lesbre <dorian.lesbre@gmail.com>")
 
 (license LICENSE)
 
@@ -20,7 +22,13 @@
  (synopsis
   "A small program to prettify and colorize the output of coq makefile")
  (description "")
- (depends ocaml dune ANSITerminal)
+ (depends
+  (ocaml
+   (and
+    (>= 4.10)
+    (< 5.0)))
+  dune
+  ANSITerminal)
  (tags
   (coq makefile coq-makefile cli)))
 
