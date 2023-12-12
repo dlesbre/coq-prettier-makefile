@@ -29,12 +29,14 @@ type line =
   | PRETTY_TABLE of string
   | Unknown of string
 
+type either = Left of Location.t | Right of string
+
 type state = {
   building : compiling list;
   (* For test, output is compared AFTER compilation, so they aren't displayed right away
      we keep their time (float) and printed status here *)
   built : (Utils.status * compile_result * float * bool) list;
-  error : ((Location.t, string) Either.t * string list) option;
+  error : (either * string list) option;
   (* Coq error if location, Test error if string *)
   seen : LS_Set.t;
   printed : bool;
@@ -49,7 +51,7 @@ let initial_state =
     built = [];
   }
 
-let is_prefix prefix line = String.starts_with ~prefix line
+let is_prefix prefix line = Future.string_starts_with ~prefix line
 let ( let* ) x f = match x with Some t -> t | None -> f ()
 let trim_start = Str.regexp {|[ \t\n\r]*["']?[ \t\n\r]*|}
 
@@ -180,7 +182,8 @@ let rec update_status file status = function
 (* strip's diff "+++" from test error messages*)
 let rec strip_ppp = function
   | [] -> []
-  | msg :: [] as l -> if String.starts_with ~prefix:"+++ " msg then [] else l
+  | msg :: [] as l ->
+      if Future.string_starts_with ~prefix:"+++ " msg then [] else l
   | msg :: msgs -> msg :: strip_ppp msgs
 
 let rec print_test force time = function

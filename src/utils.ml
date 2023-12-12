@@ -95,7 +95,7 @@ let print_file file =
 let rec strip_prefix str = function
   | [] -> str
   | prefix :: ps ->
-      if String.starts_with ~prefix str then
+      if Future.string_starts_with ~prefix str then
         Str.string_after str (String.length prefix)
       else strip_prefix str ps
 

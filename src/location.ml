@@ -26,7 +26,7 @@ let read_pair line =
 let pretty_filename ?(extension = []) filename =
   let len = String.length filename in
   let filename =
-    if String.starts_with ~prefix:"./" filename then
+    if Future.string_starts_with ~prefix:"./" filename then
       String.sub filename 2 (len - 2)
     else filename
   in
@@ -34,7 +34,7 @@ let pretty_filename ?(extension = []) filename =
     | [] -> filename
     | suffix :: suffixes ->
         let len_suffix = String.length suffix in
-        if String.ends_with ~suffix filename then
+        if Future.string_ends_with ~suffix filename then
           String.sub filename 0 (len - len_suffix)
         else rm_extension suffixes
   in
