@@ -95,8 +95,6 @@ let show_loc loc style =
           (pointers loc line_nb (String.length line)))
     done;
     close_in ic
-  with
-  | End_of_file -> ()
-  | Not_found -> ()
+  with _ -> ()
 
 let get_file loc = loc.file
