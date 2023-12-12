@@ -6,10 +6,14 @@ end)
 
 let wait = 0.5
 
-type compiling = { file : string; status : Utils.status; start_time : float }
+type compiling = {
+  file : Location.file;
+  status : Utils.status;
+  start_time : float;
+}
 
 type compile_result = {
-  filename : string;
+  filename : Location.file;
   real : float;
   _user : float;
   _sys : float;
@@ -17,19 +21,19 @@ type compile_result = {
 }
 
 type line =
-  | COQC of string
-  | COQTEST of string
+  | COQC of Location.file
+  | COQTEST of Location.file
   | Done of compile_result
   | Make of string
   | Error of Location.t (* locs *)
-  | TestError of string (* file *)
+  | TestError of Location.file (* file *)
   | COQDEP of string
   | CLEAN
   | COQ_MAKEFILE of string
   | PRETTY_TABLE of string
   | Unknown of string
 
-type either = Left of Location.t | Right of string
+type either = Left of Location.t | Right of Location.file
 
 type state = {
   building : compiling list;
@@ -40,6 +44,7 @@ type state = {
   (* Coq error if location, Test error if string *)
   seen : LS_Set.t;
   printed : bool;
+  folders : string list; (* folders of recursive makefiles *)
 }
 
 let initial_state =
@@ -49,6 +54,7 @@ let initial_state =
     error = None;
     printed = false;
     built = [];
+    folders = [];
   }
 
 let is_prefix prefix line = Future.string_starts_with ~prefix line
@@ -60,10 +66,10 @@ let rec list_last = function
   | x :: [] -> Some x
   | _ :: xs -> list_last xs
 
-let coqc x = COQC x
+let coqc folders x = COQC (Location.make_file x folders)
 
-let matches_coqc line =
-  try Scanf.sscanf line "COQC %s" (fun s -> Some (COQC s))
+let matches_coqc folders line =
+  try Scanf.sscanf line "COQC %s" (fun s -> Some (coqc folders s))
   with Scanf.Scan_failure _ -> (
     match Utils.str2argv line with
     | "coqc" :: l
@@ -71,16 +77,18 @@ let matches_coqc line =
     | "time" :: "-f" :: _ :: "coqc" :: l
     | "command" :: "time" :: "coqc" :: l
     | "command" :: "time" :: "-f" :: _ :: "coqc" :: l ->
-        Option.map coqc (list_last l)
+        Option.map (coqc folders) (list_last l)
     | _ -> None)
 
 let parse_test line state =
   try
     Scanf.sscanf line "--- %s " (fun file ->
-        let file = Filename.chop_extension file in
+        let file = Location.make_file file state.folders in
+        let name = Filename.chop_extension (Location.pretty_file file) in
         match
           List.find_opt
-            (fun (_, x, _, _) -> Filename.chop_extension x.filename = file)
+            (fun (_, x, _, _) ->
+              Filename.chop_extension (Location.pretty_file x.filename) = name)
             state.built
         with
         | Some _ -> Some file
@@ -90,7 +98,9 @@ let parse_test line state =
 let parse_line line state =
   let trimed = Str.replace_first trim_start "" line in
   (* stop if return some t, else continue *)
-  let* () = Option.map (fun x -> Error x) (Location.string2loc line) in
+  let* () =
+    Option.map (fun x -> Error x) (Location.string2loc line state.folders)
+  in
   let* () = Option.map (fun x -> TestError x) (parse_test line state) in
   if is_prefix "COQDEP" line then
     COQDEP (Str.replace_first (Str.regexp "COQDEP[ \t\n\r]+") "" line)
@@ -100,12 +110,16 @@ let parse_line line state =
     PRETTY_TABLE line
   else if is_prefix "make" trimed then Make line
   else
-    let* () = matches_coqc line in
-    try Scanf.sscanf line "COQTEST %s" (fun s -> COQTEST s)
+    let* () = matches_coqc state.folders line in
+    try
+      Scanf.sscanf line "COQTEST %s" (fun s ->
+          COQTEST (Location.make_file s state.folders))
     with Scanf.Scan_failure _ -> (
       try
         Scanf.sscanf line "%s (real: %f, user: %f, sys: %f, mem: %d ko)"
           (fun filename real _user _sys mem ->
+            let filename = Filename.chop_extension filename ^ ".v" in
+            let filename = Location.make_file filename state.folders in
             Done { filename; real; _user; _sys; mem })
       with Scanf.Scan_failure _ -> Unknown line)
 
@@ -118,7 +132,11 @@ let print_current state =
         Utils.print_separator ();
         List.iter
           (fun { file; status; start_time } ->
-            Utils.print_file_line file status (Unix.time () -. start_time) None)
+            Utils.print_file_line
+              (Location.pretty_file ~extension:[ ".v" ] file)
+              status
+              (Unix.time () -. start_time)
+              None)
           state.building);
     flush stdout;
     { state with printed = true })
@@ -150,24 +168,10 @@ let contains s1 s2 =
 
 let is_error msg = contains msg "Error" || contains msg "Command exited"
 
-let files_match a b =
-  let a = Location.pretty_filename a in
-  let b = Location.pretty_filename b in
-  let path_a = List.rev (split_path a) in
-  let path_b = List.rev (split_path b) in
-  let rec compare l r =
-    match (l, r) with
-    | [], [] -> true
-    | [], _ -> Filename.is_relative a && not (Filename.is_relative b)
-    | _, [] -> Filename.is_relative b && not (Filename.is_relative a)
-    | a :: a', b :: b' -> a = b && compare a' b'
-  in
-  compare path_a path_b
-
 let rec list_rm_assoc file = function
   | [] -> (None, [])
   | t :: q ->
-      if files_match t.file file then (Some t, q)
+      if Location.equal_file t.file file then (Some t, q)
       else
         let elem, list = list_rm_assoc file q in
         (elem, t :: list)
@@ -175,7 +179,7 @@ let rec list_rm_assoc file = function
 let rec update_status file status = function
   | [] -> [ { file; status; start_time = Unix.time () } ]
   | t :: q ->
-      if files_match t.file file then
+      if Location.equal_file t.file file then
         { t with status = Utils.max_status status t.status } :: q
       else t :: update_status file status q
 
@@ -191,7 +195,7 @@ let rec print_test force time = function
   | ((status, compiling, t, printed) as info) :: l ->
       if (not printed) && (force || t +. wait < time) then (
         Utils.print_file_line
-          (Location.pretty_filename ~extension:[ ".vo" ] compiling.filename)
+          (Location.pretty_file ~extension:[ ".vo"; ".v" ] compiling.filename)
           status compiling.real (Some compiling.mem);
         (status, compiling, t, true) :: print_test force time l)
       else info :: print_test force time l
@@ -207,9 +211,7 @@ let resolve_error state =
       if LS_Set.mem (loc, msg) state.seen then { state with error = None }
       else
         let state = { state with seen = LS_Set.add (loc, msg) state.seen } in
-        let file =
-          Location.pretty_filename ~extension:[ ".v" ] (Location.get_file loc)
-        in
+        let file = Location.get_file loc in
         let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
         let color, text, status =
           if is_error msg then (red, "Error", Utils.S_Error)
@@ -230,7 +232,7 @@ let resolve_error state =
       let msg = strip_ppp msg in
       let msg = List.fold_left (fun acc m -> m ^ "\n" ^ acc) "" msg in
       printf [ Bold; red ] "Test Failed";
-      printf [] ": %s\n" file;
+      printf [] ": %s\n" (Location.pretty_file file);
       Utils.print_error msg [ red ];
       printf [] "\n";
       {
@@ -239,8 +241,10 @@ let resolve_error state =
         built =
           List.map
             (fun (status, c, i, b) ->
-              if Filename.chop_extension c.filename = file then
-                (Utils.S_TestFail, c, i, b)
+              if
+                Filename.chop_extension (Location.pretty_file c.filename)
+                = Filename.chop_extension (Location.pretty_file file)
+              then (Utils.S_TestFail, c, i, b)
               else (status, c, i, b))
             state.built;
       }
@@ -251,7 +255,6 @@ let todo = Queue.create ()
 let print_line state = function
   | COQC file ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:[ ".v" ] file in
       let state =
         {
           state with
@@ -261,7 +264,6 @@ let print_line state = function
       state
   | COQTEST file ->
       let state = resolve_error state in
-      let file = Location.pretty_filename ~extension:[ ".v" ] file in
       let state =
         {
           state with
@@ -281,11 +283,15 @@ let print_line state = function
         [ ANSITerminal.Bold; ANSITerminal.green ]
         "Cleaning build files\n";
       state
-  | Make _m ->
+  | Make m -> (
       let state = resolve_error state in
-      (* ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.yellow ] "make";
-         ANSITerminal.printf [] "%s\n" (String.sub m 4 (String.length m - 4)); *)
-      state
+      try
+        Scanf.sscanf m "make[%d]: Entering directory '%s@'" (fun _ s ->
+            { state with folders = s :: state.folders })
+      with Scanf.Scan_failure _ ->
+        (* ANSITerminal.printf [ ANSITerminal.Bold; ANSITerminal.yellow ] "make";
+           ANSITerminal.printf [] "%s\n" (String.sub m 4 (String.length m - 4)); *)
+        state)
   | COQ_MAKEFILE _line ->
       let state = resolve_error state in
       ANSITerminal.printf
@@ -300,9 +306,10 @@ let print_line state = function
   | Done d ->
       let state = resolve_error state in
       let file =
-        Location.pretty_filename ~extension:[ ".vo"; ".glob" ] d.filename
+        Location.pretty_file ~extension:[ ".vo"; ".glob"; ".v" ] d.filename
       in
-      let status, building = list_rm_assoc file state.building in
+      let v_file = Location.make_file (file ^ ".v") state.folders in
+      let status, building = list_rm_assoc v_file state.building in
       let status =
         match status with
         | None -> Utils.S_Ok
