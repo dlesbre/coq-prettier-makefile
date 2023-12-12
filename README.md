@@ -36,6 +36,6 @@ should work even if you use a wrapper makefile around the standard coq_makefile.
 Any flag arguments are forwarded to `make`, so you can call `coq-make -j4` with
 the expected result. For non flag arguments `coq-make` will try to be smart. If
 it looks like a file appearing in the `_CoqProject`, it will call `make
-TGTS="full/file/name.vo"`, otherwise it will pass the argument as usual. This
-allows you to type `coq-make file` instead of the lengthier `coq-make
+full/file/name.vo`, otherwise it will pass the argument as usual. This
+allows typing `coq-make file` instead of the lengthier `coq-make
 path/to/file.vo`
