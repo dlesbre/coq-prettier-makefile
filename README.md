@@ -2,6 +2,10 @@
 
 # Coq prettier makefile
 
+[![OCaml Versions](https://img.shields.io/badge/ocaml%20version-4.10.x%20--%204.14.x-blue)](./coqprettiermakefile.opam)
+[![CI Status](https://img.shields.io/github/actions/workflow/status/dlesbre/coq-prettier-makefile/ocaml.yml?label=CI)](https://github.com/dlesbre/coq-prettier-makefile/actions)
+[![License](https://img.shields.io/github/license/dlesbre/coq-prettier-makefile)](./LICENSE)
+
 This is a simple utility script to render a prettier output when compiling large
 Coq projects. It prints a nice aligned output with color coded build times and memory usages :
 
