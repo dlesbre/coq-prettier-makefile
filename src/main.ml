@@ -126,7 +126,7 @@ let get_argv () =
   if targets = [] then (
     ANSITerminal.printf
       [ ANSITerminal.Bold; ANSITerminal.green ]
-      "Compiling whole project";
+      "Compiling whole project\n";
     argv)
   else
     let targets = List.map (fun x -> "'" ^ x ^ "'") targets in
