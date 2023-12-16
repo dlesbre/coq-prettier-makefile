@@ -13,7 +13,7 @@
 
 (maintainers "Dorian Lesbre <dorian.lesbre@gmail.com>")
 
-(license LICENSE)
+(license BSD-3-Clause)
 
 ; (documentation https://url/to/documentation)
 
