@@ -4,9 +4,10 @@ let str_end = "coq-prettier-makefile-done"
 let update_time = 0.05
 
 (** Switch to true to use TGTS="..." to pass targets to make
-    Newer version of coq_makefile expect regular make targets. *)
+    Newer version of coq_makefile expects regular make targets. *)
 let use_tgts = false
 
+(** Add newly read lines to [Lines.todo] *)
 let rec fetch_input ic =
   try
     if not !Lines.is_done then

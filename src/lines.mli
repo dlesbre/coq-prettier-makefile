@@ -6,14 +6,16 @@ type state
     accumulates lines for error messages, and other misc info *)
 
 (* ==== string utility functions ==== *)
+
 val is_prefix : string -> string -> bool
 val split_path : string -> string list
 
 (* ==== Line and state manipulation ==== *)
+
 val parse_line : string -> state -> line
 
 val print_line : state -> line -> state
-(** Print result of current line, and add it's info to the state *)
+(** Prints result of current line, and add its info to the state *)
 
 val print_final : bool -> float -> state -> state
 (** Prints a final widget with totals/max, float is time since started
